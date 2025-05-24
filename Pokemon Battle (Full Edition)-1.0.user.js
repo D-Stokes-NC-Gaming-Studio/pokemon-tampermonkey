@@ -892,11 +892,12 @@
             const baseHP = d.stats.find(s => s.stat.name === 'hp').base_stat;
             const myStats = getStats(starterName);
             const myLevel = myStats.level;
-
-            // Scale wild HP
+             // Scale wild HP
             const hpMultiplier = 8; // Tune as needed
             wMaxHP = Math.floor(baseHP + myLevel * hpMultiplier);
-            wHP = pHP = myStats.currentHP;
+            pHP = myStats.currentHP;
+            wHP = wMaxHP;
+
 
             drawBattle();
         }});
