@@ -39,7 +39,7 @@
 
     // In addition to the above blocklist:
     if (
-        window.location.hostname.endsWith('youtube.com') &&
+        ['youtube.com', 'www.youtube.com'].includes(window.location.hostname) &&
         (window.location.pathname.startsWith('/live_chat') || window.location.pathname.startsWith('/embed/'))
     ) {
         return;
