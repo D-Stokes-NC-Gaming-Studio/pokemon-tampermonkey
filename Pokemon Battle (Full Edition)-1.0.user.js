@@ -23,12 +23,13 @@
         /:\/\/chatgpt\.com\//,
         /:\/\/github\.com\//,
         /:\/\/youtube\.com\//,
-        /:\/\/password-v2.corp\.amazon\.com/,
+        /:\/\/password-v2\.corp\.amazon\.com/,
         /:\/\/password\.amazon\.com/,
         /:\/\/amazonots\.service-now\.com/,
         /:\/\/ithelp\.corp\.amazon\.com/,
         /:\/\/prod\.dscs\.opstechit\.amazon\.dev/,
         /:\/\/apxprod\.dscs\.opstechit\.amazon\.dev/,
+        /:\/\/zebratool\.corp\.amazon\.com/,
         /// DoubleClick ad domains
         // Add more patterns as needed
     ];
