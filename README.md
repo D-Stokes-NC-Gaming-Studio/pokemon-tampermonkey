@@ -21,6 +21,7 @@ A fully immersive, browser-based Pokémon experience built using a **Tampermonke
 
 ### ⚙️ Settings & Persistence
 - **Persistent Data**: Progress is saved using `GM_setValue`, making it **persistent across sessions and sites**.
+- **Database**: Progress is saved in database, making it where users can't edit pokemon stats and bag items.
 - **Custom Settings**: Adjust sound volume, toggle random battles, or change your active Pokémon.
 - **Game Reset**: Full data wipe and game reset available.
 
@@ -51,6 +52,7 @@ To use this userscript, you need **[Tampermonkey](https://www.tampermonkey.net/)
 - **[PokéAPI](https://pokeapi.co/)** for real-time Pokémon data, sprites, evolution chains, and stats.
 - **Tampermonkey API** (`GM_setValue`, `GM_getValue`, `GM.xmlHttpRequest`, etc.)
 - **HTML5 Audio & DOM Manipulation** for UI and sound integration.
+- **[PokéAPI Wrapper](https://dstokesncstudio.com/pokeapi/pokeapi.php)
 
 ---
 
