@@ -4,7 +4,7 @@
 // @connect     pokeapi.co
 // @connect     https://dstokesncstudio.com/pokeapi/pokeapi.php
 // @namespace   dstokesncstudio.com
-// @version     1.3
+// @version     1.2.0.2
 // @description Full version with XP, evolution, stats, sound, shop, battles, and walking partner — persistent across sites.
 // @include     *
 // @grant       GM.xmlHttpRequest
@@ -26,6 +26,8 @@ GM.xmlHttpRequest({
         console.error("Failed to fetch partner:", err);
     }
 });
+// form images https://raw.githubusercontent.com/HybridShivam/Pokemon/refs/heads/master/assets/imagesHQ/003-Gmax.png
+// https://raw.githubusercontent.com/HybridShivam/Pokemon/refs/heads/master/assets/images/003-Gmax.png
 */
 (function() {
     'use strict';
@@ -651,22 +653,70 @@ GM.xmlHttpRequest({
     }
 
     // --- Walking sprite ---
+
+    let spriteWrapperEl = null;
+    let hpFillEl = null;
+    let currentHP = 0;
+    let maxHP = 100;
     function spawnWalkingSprite(spriteUrl) {
-        if (spriteEl) spriteEl.remove();
+        // Clean up existing
+        if (spriteWrapperEl) spriteWrapperEl.remove();
         if (walkInterval) clearInterval(walkInterval);
 
         const wrapper = document.createElement('div');
+        spriteWrapperEl = wrapper;
+
+        const stats = getStats(partnerName) || {};
+        currentHP = stats.currentHP || 0;
+        maxHP = stats.hp || 100;
+
+        // Wrapper
         Object.assign(wrapper.style, {
             position: 'fixed',
             bottom: '64px',
             left: '0px',
             width: '64px',
-            height: '64px',
             zIndex: '9999',
             pointerEvents: 'none',
-            overflow: 'visible'
+            overflow: 'visible',
         });
 
+        // Inner container (flips)
+        const inner = document.createElement('div');
+        Object.assign(inner.style, {
+            position: 'relative',
+            width: '64px',
+            height: '80px'
+        });
+
+        // HP bar wrapper
+        const progressWrapper = document.createElement('div');
+        Object.assign(progressWrapper.style, {
+            position: 'absolute',
+            top: '-12px',
+            left: '8px',
+            width: '48px',
+            height: '6px',
+            backgroundColor: '#333',
+            border: '1px solid #888',
+            borderRadius: '3px',
+            overflow: 'hidden',
+            transform: 'scaleX(1)',
+        });
+
+        // HP fill (animate this!)
+        hpFillEl = document.createElement('div');
+        const hpPercent = Math.max(0, Math.min(100, (currentHP / maxHP) * 100));
+        Object.assign(hpFillEl.style, {
+            width: `${hpPercent}%`,
+            height: '100%',
+            backgroundColor: hpPercent > 50 ? '#4caf50' : hpPercent > 25 ? '#ff9800' : '#f44336',
+            transition: 'width 0.5s ease-in-out'
+        });
+
+        progressWrapper.appendChild(hpFillEl);
+
+        // Sprite image
         spriteEl = document.createElement('img');
         spriteEl.id = 'pkm-partner-sprite';
         spriteEl.src = spriteUrl;
@@ -675,12 +725,17 @@ GM.xmlHttpRequest({
             width: '64px',
             height: '64px',
             imageRendering: 'pixelated',
-            animation: 'bobWalk 0.6s infinite'
+            animation: 'bobWalk 0.6s infinite',
+            display: 'block',
+            marginTop: '16px'
         });
 
-        wrapper.appendChild(spriteEl);
+        inner.appendChild(progressWrapper);
+        inner.appendChild(spriteEl);
+        wrapper.appendChild(inner);
         document.body.appendChild(wrapper);
 
+        // Walk animation
         let posX = 0;
         let dir = 1;
         const speed = 2;
@@ -698,9 +753,73 @@ GM.xmlHttpRequest({
             }
 
             wrapper.style.left = `${posX}px`;
-            wrapper.style.transform = `scaleX(${dir === 1 ? -1 : 1})`;
+            inner.style.transform = `scaleX(${dir === 1 ? -1 : 1})`;
+            progressWrapper.style.transform = 'scaleX(1)'; // keep HP bar forward
         }, 30);
     }
+
+    function setHP(newHP) {
+        const clamped = Math.max(0, Math.min(maxHP, newHP));
+        const diff = clamped - currentHP;
+        if (diff !== 0) {
+            showFloatingHPChange(diff);
+        }
+
+        currentHP = clamped;
+        const percent = (currentHP / maxHP) * 100;
+
+        if (hpFillEl) {
+            hpFillEl.style.width = `${percent}%`;
+            hpFillEl.style.backgroundColor =
+                percent > 50 ? '#4caf50' :
+            percent > 25 ? '#ff9800' :
+            '#f44336';
+        }
+    }
+
+
+    function showFloatingHPChange(amount) {
+        const floatText = document.createElement('div');
+        floatText.innerText = amount > 0 ? `+${amount}` : `${amount}`;
+
+        // Style it
+        Object.assign(floatText.style, {
+            position: 'absolute',
+            top: '-28px',
+            left: '0px',
+            width: '64px',
+            textAlign: 'center',
+            fontWeight: 'bold',
+            fontSize: '14px',
+            fontFamily: 'monospace',
+            color: amount > 0 ? '#00ff66' : '#ff4444',
+            textShadow: '0 0 2px black, 1px 1px 2px black',
+            pointerEvents: 'none',
+            opacity: '1',
+            transform: 'translateY(0)',
+            zIndex: '10000',
+            transition: 'transform 1s ease-out, opacity 1s ease-out'
+        });
+
+        // Append it FIRST, then trigger animation
+        spriteWrapperEl?.appendChild(floatText);
+
+        // Delay the animation trigger to ensure browser registers initial styles
+        setTimeout(() => {
+            floatText.style.transform = 'translateY(-30px)';
+            floatText.style.opacity = '0';
+        }, 50); // 1 frame (~16ms) might work, but 50ms is safer
+
+        // Remove after animation completes
+        setTimeout(() => {
+            floatText.remove();
+        }, 1050);
+    }
+
+
+
+
+
     // === Starter Selection ===
     let starterPanel;
 
@@ -883,6 +1002,15 @@ GM.xmlHttpRequest({
 #pkm-partner-sprite {
   transform-origin: center;
 }
+.pixel-frame {
+  border: 24px solid transparent; /* thickness of the border you want */
+  border-image: url('https://raw.githubusercontent.com/D-Stokes-NC-Gaming-Studio/pokemon-tampermonkey/refs/heads/main/Windowskins/choice%20ug.png') 23 stretch;
+  width: 280px;
+  margin: auto;
+  padding: 16px;
+  color: white;
+  box-sizing: content-box;
+}
 `;
     document.head.appendChild(style);
 
@@ -964,9 +1092,10 @@ GM.xmlHttpRequest({
     function openBattle() {
         if (battlePanel) return;
         battlePanel = document.createElement('div');
+        battlePanel.classList += ' pixel-frame';
         Object.assign(battlePanel.style, {
             position:'fixed', top:'50%', left:'50%', transform:'translate(-50%,-50%)',
-            background:'#222', color:'#fff', padding:'12px', border:'2px solid #fff',
+            color:'#fff', padding:'0px',
             zIndex:'10000', width:'280px'
         });
         document.body.appendChild(battlePanel);
@@ -1024,8 +1153,16 @@ GM.xmlHttpRequest({
     }
     function drawBattle(msg) {
         battlePanel.innerHTML = '';
-        if (msg) battlePanel.append(Object.assign(document.createElement('div'), { textContent: msg }));
+        const main = document.createElement('div');
+        if (msg) main.append(Object.assign(document.createElement('div'), { textContent: msg }));
         const info = document.createElement('div');
+
+        Object.assign(main.style,{
+            background: 'RGB(53, 35, 87)',
+            zIndex: '1000',
+            position: 'relative'
+        });
+        info.classList += ' text-capitalize text-center';
         info.innerHTML = `You HP: ${pHP}<br>${wild.name} HP: ${wHP}/${wMaxHP}`;
         info.innerHTML += `<br>Form: ${wild.form || 'Normal'} | Shiny: ${wild.isShiny ? 'Yes' : 'No'}`;
         const partnerLevel = getStats(starterName).level;
@@ -1039,14 +1176,14 @@ GM.xmlHttpRequest({
         const img = document.createElement('img');
         img.src = wild.sprite;
         img.id = 'wild-img';
+        img.classList += ' w-auto';
         Object.assign(img.style, {
-            width: '80px',
+            width: '42',
             display: 'block',
             animation: 'bobWalk 1.2s infinite',
             transformOrigin: 'center'
         });
 
-        battlePanel.append(img, info);
         const ctl = document.createElement('div');
         Object.assign(ctl.style, { display:'flex', flexWrap:'wrap', gap:'6px', marginTop:'8px' });
         [
@@ -1068,7 +1205,10 @@ GM.xmlHttpRequest({
         sleepBtn.style.flex = '1';
         ctl.appendChild(sleepBtn);
 
-        battlePanel.appendChild(ctl);
+        main.append(img, info);
+        main.appendChild(ctl);
+        battlePanel.append(main);
+
     }
     function animateHit() {
         const el = document.getElementById('wild-img');
@@ -1113,6 +1253,7 @@ GM.xmlHttpRequest({
 
         animatePartnerHit();
         playSound('hit');
+        setTimeout(() => setHP(pHP), stats.hp);
         renderHeader();
         if (pHP <= 0) {
             SOUNDS.battleSound.pause();
@@ -1229,12 +1370,20 @@ GM.xmlHttpRequest({
 
     function usePotion() {
         if (getInt(STORAGE.potions) <= 0) return drawBattle('No Potions!');
+
         setInt(STORAGE.potions, getInt(STORAGE.potions) - 1);
-        pHP = Math.min(getStats(starterName).hp, pHP + 30);
+
+        const stats = getStats(starterName);
+        const newHP = Math.min(stats.hp, pHP + 30); // Don't exceed max HP
+        setHP(newHP); // ✅ This triggers the animation too
+        pHP = newHP; // ✅ Update your local HP value
+
         drawBattle('You used a Potion.');
         renderHeader();
+
         setTimeout(wildAttack, 500);
     }
+
     function runAway() {
         SOUNDS.battleSound.pause();
         SOUNDS.battleSound.currentTime = 0;
