@@ -2,6 +2,7 @@
 // @name        Pokemon Battle (Full Edition)
 // @author      JellxWrld(@diedrchr), DStokesNCStudio9@esrobbie)
 // @connect     pokeapi.co
+// @connect     https://dstokesncstudio.com/pokeapi/pokeapi.php
 // @namespace   dstokesncstudio.com
 // @version     1.2
 // @description Full version with XP, evolution, stats, sound, shop, battles, and walking partner — persistent across sites.
@@ -11,7 +12,21 @@
 // @grant       GM_getValue
 // @grant       GM_setValue
 // ==/UserScript==
-
+/*
+How to use the request:
+GM.xmlHttpRequest({
+    method: 'GET',
+    url: `https://dstokesncstudio.com/pokeapi/pokeapi.php?action=getPokemon&name=3`,
+    onload: async res => {
+        const d = JSON.parse(res.responseText);
+        // build your entry
+        console.log(d);
+    },
+    onerror: err => {
+        console.error("Failed to fetch partner:", err);
+    }
+});
+*/
 (function() {
     'use strict';
 
@@ -560,8 +575,8 @@
 
                 // if you want to track its stats in storage you can also do:
                 const stats = getStats(name);
-                stats.currentHP = entry.currentHP;
-                stats.hp = entry.currentHP;
+                stats.currentHP = stats.currentHP;
+                stats.hp = stats.hp;
                 setStats(name, stats);
 
                 renderHeader();
@@ -579,7 +594,7 @@
     function spawnWalkingSprite() {
         if (spriteEl) spriteEl.remove();
         if (walkInterval) clearInterval(walkInterval);
-
+        starterName = GM_getValue(STORAGE.starter);
         // Outer wrapper to handle flipping
         const wrapper = document.createElement('div');
         Object.assign(wrapper.style, {
@@ -893,7 +908,7 @@
             const baseHP = d.stats.find(s => s.stat.name === 'hp').base_stat;
             const myStats = getStats(starterName);
             const myLevel = myStats.level;
-             // Scale wild HP
+            // Scale wild HP
             const hpMultiplier = 8; // Tune as needed
             wMaxHP = Math.floor(baseHP + myLevel * hpMultiplier);
             pHP = myStats.currentHP;
