@@ -4,7 +4,7 @@
 // @connect     pokeapi.co
 // @connect     https://dstokesncstudio.com/pokeapi/pokeapi.php
 // @namespace   dstokesncstudio.com
-// @version     1.2
+// @version     1.3
 // @description Full version with XP, evolution, stats, sound, shop, battles, and walking partner — persistent across sites.
 // @include     *
 // @grant       GM.xmlHttpRequest
@@ -82,7 +82,44 @@ GM.xmlHttpRequest({
         volume: 'pkm_volume',
         pokedex: 'pkm_pokedex'
     };
+    const POKEAPI_VALID_FORMS = {
+        // only include forms that PokéAPI has sprites for
+        mega: ['charizard-mega-x', 'charizard-mega-y', 'mewtwo-mega-x', 'mewtwo-mega-y', 'lucario-mega', 'gyarados-mega'],
+        alolan: ['raichu-alola', 'marowak-alola', 'vulpix-alola', 'ninetales-alola'],
+        galarian: ['zigzagoon-galar', 'slowpoke-galar', 'rapidash-galar'],
+        hisuian: ['zoroark-hisui', 'braviary-hisui', 'growlithe-hisui'],
+        paldean: ['wooper-paldea']
+    };
+    const SPRITE_NAME_FIXES = {
+        'shaymin-land': 'shaymin',
+        'giratina-altered': 'giratina',
+        'tornadus-incarnate': 'tornadus',
+        'thundurus-incarnate': 'thundurus',
+        'landorus-incarnate': 'landorus',
+        'keldeo-ordinary': 'keldeo',
+        'meloetta-aria': 'meloetta',
+        'lycanroc-midday': 'lycanroc',
+        'zygarde-50': 'zygarde',
+        'wishiwashi-solo': 'wishiwashi'
+        // Add more as needed
+    };
+    function getRandomForm(baseName) {
+        const isShiny = Math.random() < 0.05;
+        const allForms = Object.entries(POKEAPI_VALID_FORMS)
+        .flatMap(([formType, names]) => names.map(name => ({ formType, name })));
 
+        const possibleForms = allForms.filter(f => f.name.startsWith(baseName.toLowerCase()));
+
+        let form = null;
+        if (possibleForms.length && Math.random() < 0.12) {
+            form = possibleForms[Math.floor(Math.random() * possibleForms.length)];
+        }
+
+        const formName = form ? form.name : baseName.toLowerCase();
+        const displayName = `${baseName}`;
+
+        return { isShiny, formName, displayName };
+    }
     function getStats(name) {
         const allStats = getObj(STORAGE.stats);
         return allStats[name.toLowerCase()] || { xp: 0, level: 1, hp: 100, atk: 15 };
@@ -156,7 +193,8 @@ GM.xmlHttpRequest({
         start: new Audio('https://github.com/jellowrld/pokemon-tampermonkey/raw/refs/heads/main/wildbattle.mp3'),
         victory: new Audio('https://github.com/jellowrld/pokemon-tampermonkey/raw/refs/heads/main/victory.mp3'),
         lose: new Audio('https://github.com/jellowrld/pokemon-tampermonkey/raw/refs/heads/main/lose.mp3'),
-        stop: new Audio('')
+        stop: new Audio(''),
+        battleSound: new Audio('https://github.com/jellowrld/pokemon-tampermonkey/raw/refs/heads/main/wildbattle.mp3')
     };
     const parsedVol = parseFloat(getStr(STORAGE.volume, '0.4'));
     const savedVolume = isNaN(parsedVol) ? 0.4 : parsedVol;
@@ -185,8 +223,7 @@ GM.xmlHttpRequest({
     let randomBattleEnabled = getBool('pkm_random_battles');
     let randomBattleTimer = null;
     let nextBattleTime = null;
-    let battleSound = new Audio('https://github.com/jellowrld/pokemon-tampermonkey/raw/refs/heads/main/wildbattle.mp3');
-    battleSound.loop = true;
+    SOUNDS.battleSound.loop = true;
     function loadPokedex() {
         let raw = GM_getValue(STORAGE.pokedex, '[]');
         try { return JSON.parse(raw); }
@@ -545,7 +582,17 @@ GM.xmlHttpRequest({
     function fetchPartner(name) {
         if (!name) return;
 
+        starterName= name;
         partnerSpriteUrl = `https://play.pokemonshowdown.com/sprites/ani/${name.toLowerCase()}.gif`;
+        partnerName = name[0].toUpperCase() + name.slice(1);
+        const isShiny = name.toLowerCase().startsWith('shiny ');
+        let rawName = isShiny ? name.toLowerCase().replace('shiny ', '') : name.toLowerCase();
+
+        // Apply sprite name fixes if needed
+        if (SPRITE_NAME_FIXES[rawName]) {
+            rawName = SPRITE_NAME_FIXES[rawName];
+        }
+
         GM.xmlHttpRequest({
             method: 'GET',
             url: `https://pokeapi.co/api/v2/pokemon/${encodeURIComponent(name)}`,
@@ -555,7 +602,7 @@ GM.xmlHttpRequest({
                 const entry = {
                     id: d.id,
                     name: d.name[0].toUpperCase() + d.name.slice(1),
-                    spriteUrl: d.sprites.front_default,
+                    spriteUrl: partnerSpriteUrl,
                     types: d.types.map(t => t.type.name),
                     abilities: d.abilities.map(a => a.ability.name),
                     stats: d.stats.map(s => ({ name: s.stat.name, value: s.base_stat })),
@@ -571,35 +618,47 @@ GM.xmlHttpRequest({
                 // 3) now set up your partner normally:
                 starterName= name;
                 partnerName= entry.name;
-                partnerSpriteUrl = entry.spriteUrl;
+                //partnerSpriteUrl = entry.spriteUrl;
 
                 // if you want to track its stats in storage you can also do:
                 const stats = getStats(name);
-                stats.currentHP = stats.currentHP;
-                stats.hp = stats.hp;
-                setStats(name, stats);
+                console.log(stats)
+                if (
+                    stats.hp == null ||
+                    stats.currentHP == null ||
+                    stats.currentHP == undefined
+                ) {
+                    stats.currentHP = entry.currentHP;
+                    stats.hp = entry.currentHP;
+                    console.log(entry);
+                    setStats(name, stats);
+                } else {
+                    setStats(name, stats);
+                }
+
+
+
 
                 renderHeader();
-                spawnWalkingSprite();
+                spawnWalkingSprite(partnerSpriteUrl);
             },
             onerror: err => {
                 console.error("Failed to fetch partner:", err);
             }
         });
         renderHeader();
-        spawnWalkingSprite();
+        spawnWalkingSprite(partnerSpriteUrl);
     }
 
     // --- Walking sprite ---
-    function spawnWalkingSprite() {
+    function spawnWalkingSprite(spriteUrl) {
         if (spriteEl) spriteEl.remove();
         if (walkInterval) clearInterval(walkInterval);
-        starterName = GM_getValue(STORAGE.starter);
-        // Outer wrapper to handle flipping
+
         const wrapper = document.createElement('div');
         Object.assign(wrapper.style, {
             position: 'fixed',
-            bottom: '64px', // just above your UI bar
+            bottom: '64px',
             left: '0px',
             width: '64px',
             height: '64px',
@@ -608,10 +667,9 @@ GM.xmlHttpRequest({
             overflow: 'visible'
         });
 
-        // Sprite image element (bobbing animation goes here)
         spriteEl = document.createElement('img');
         spriteEl.id = 'pkm-partner-sprite';
-        spriteEl.src = `https://play.pokemonshowdown.com/sprites/ani/${starterName}.gif`;
+        spriteEl.src = spriteUrl;
         spriteEl.alt = partnerName || 'partner';
         Object.assign(spriteEl.style, {
             width: '64px',
@@ -624,7 +682,7 @@ GM.xmlHttpRequest({
         document.body.appendChild(wrapper);
 
         let posX = 0;
-        let dir = 1; // 1 = right, -1 = left
+        let dir = 1;
         const speed = 2;
 
         walkInterval = setInterval(() => {
@@ -640,7 +698,7 @@ GM.xmlHttpRequest({
             }
 
             wrapper.style.left = `${posX}px`;
-            wrapper.style.transform = `scaleX(${dir === 1 ? -1 : 1})`; // ✅ correct direction flip
+            wrapper.style.transform = `scaleX(${dir === 1 ? -1 : 1})`;
         }, 30);
     }
     // === Starter Selection ===
@@ -705,7 +763,7 @@ GM.xmlHttpRequest({
             padding: '12px', border: '2px solid black',
             zIndex: '10000', width: '300px'
         });
-        settingsPanel.classList = 'd-grid gap-1';
+        settingsPanel.classList = 'd-grid gap-1 bg-dark bg-opacity-50';
         document.body.appendChild(settingsPanel);
 
         renderSettings();
@@ -717,9 +775,22 @@ GM.xmlHttpRequest({
 
         // Sound On/Off Toggle
         const soundToggle = createButton(`Sound: ${getBool(STORAGE.soundOn) ? 'On' : 'Off'}`, () => {
-            setBool(STORAGE.soundOn, !getBool(STORAGE.soundOn), 'btn btn-success');
+            const current = getBool(STORAGE.soundOn);
+            const newVal = !current;
+            setBool(STORAGE.soundOn, newVal);
+
+            if (!newVal) {
+                // Stop and reset all currently playing sounds
+                Object.values(SOUNDS).forEach(audio => {
+                    if (audio instanceof Audio) {
+                        audio.pause();
+                        audio.currentTime = 0;
+                    }
+                });
+            }
+
             renderSettings();
-        });
+        }, 'btn btn-info');
 
         // Volume Slider
         const volumeSlider = document.createElement('input');
@@ -730,11 +801,13 @@ GM.xmlHttpRequest({
         volumeSlider.value = getStr(STORAGE.volume, '0.4');
         volumeSlider.style.width = '100%';
         volumeSlider.oninput = () => {
+            const vol = parseFloat(volumeSlider.value);
             setStr(STORAGE.volume, volumeSlider.value);
             Object.values(SOUNDS).forEach(a => {
-                a.volume = parseFloat(volumeSlider.value);
+                if (a instanceof Audio) a.volume = vol;
             });
         };
+
 
         // Change Starter
         const starterBtn = createButton('🔄 Change Starter', openStarter, 'btn btn-success');
@@ -753,11 +826,11 @@ GM.xmlHttpRequest({
             settingsPanel = null;
         }, 'btn btn-success');
         settingsPanel.append(
-            soundToggle,
-            volumeSlider,
-            starterBtn,
-            randomBattleToggle,
-            resetBtn,
+            soundToggle, document.createElement('br'),
+            volumeSlider, document.createElement('br'), document.createElement('br'),
+            starterBtn, document.createElement('br'), document.createElement('br'),
+            randomBattleToggle, document.createElement('br'), document.createElement('br'),
+            resetBtn, document.createElement('br'), document.createElement('br'),
             closeBtn
         );
     }
@@ -897,32 +970,64 @@ GM.xmlHttpRequest({
             zIndex:'10000', width:'280px'
         });
         document.body.appendChild(battlePanel);
-        battleSound.play();
+        if (getBool(STORAGE.soundOn)) {
+            SOUNDS.battleSound.play();
+        }
         startBattle();
     }
     function startBattle() {
-        const id = Math.floor(Math.random()*649)+1;
-        GM.xmlHttpRequest({ method:'GET', url:`https://pokeapi.co/api/v2/pokemon/${id}`, onload(res) {
-            const d = JSON.parse(res.responseText);
-            wild = { name:d.name[0].toUpperCase()+d.name.slice(1), sprite:d.sprites.front_default };
-            const baseHP = d.stats.find(s => s.stat.name === 'hp').base_stat;
-            const myStats = getStats(starterName);
-            const myLevel = myStats.level;
-            // Scale wild HP
-            const hpMultiplier = 8; // Tune as needed
-            wMaxHP = Math.floor(baseHP + myLevel * hpMultiplier);
-            pHP = myStats.currentHP;
-            wHP = wMaxHP;
+        const id = Math.floor(Math.random() * 649) + 1;
+
+        GM.xmlHttpRequest({
+            method: 'GET',
+            url: `https://pokeapi.co/api/v2/pokemon/${id}`,
+            onload(res) {
+                const d = JSON.parse(res.responseText);
+                const baseName = d.name[0].toUpperCase() + d.name.slice(1);
+
+                const { isShiny, formName, displayName } = getRandomForm(baseName);
+
+                // Use Showdown sprite URLs with form-safe names
+                let showdownName = formName.toLowerCase().replace(/[^a-z0-9-]/g, '');
+                showdownName = SPRITE_NAME_FIXES[showdownName] || showdownName;
+
+                const sprite = isShiny
+                ? `https://play.pokemonshowdown.com/sprites/ani-shiny/${showdownName}.gif`
+                : `https://play.pokemonshowdown.com/sprites/ani/${showdownName}.gif`;
+
+                wild = {
+                    name: displayName,
+                    baseName: d.name,
+                    sprite: sprite,
+                    formName: formName,
+                    isShiny: isShiny
+                };
+
+                const baseHP = d.stats.find(s => s.stat.name === 'hp').base_stat;
+                const baseAtk = d.stats.find(s => s.stat.name === 'attack')?.base_stat || 10;
+
+                const myStats = getStats(starterName);
+                const myLevel = myStats.level;
+
+                const hpMultiplier = 8;
+                wMaxHP = Math.floor(baseHP + myLevel * hpMultiplier);
+                pHP = myStats.currentHP;
+                wHP = wMaxHP;
+
+                // ✅ Save scaled wild attack stat
+                wild.baseAtk = Math.floor(baseAtk + myLevel * 1.0);
 
 
-            drawBattle();
-        }});
+                drawBattle();
+            }
+        });
     }
     function drawBattle(msg) {
         battlePanel.innerHTML = '';
         if (msg) battlePanel.append(Object.assign(document.createElement('div'), { textContent: msg }));
         const info = document.createElement('div');
         info.innerHTML = `You HP: ${pHP}<br>${wild.name} HP: ${wHP}/${wMaxHP}`;
+        info.innerHTML += `<br>Form: ${wild.form || 'Normal'} | Shiny: ${wild.isShiny ? 'Yes' : 'No'}`;
         const partnerLevel = getStats(starterName).level;
         const rarity = getRarity(wild.name);
         const rarityPenalty = { common: 1, uncommon: 1.2, rare: 1.5, legendary: 2 }[rarity];
@@ -950,7 +1055,7 @@ GM.xmlHttpRequest({
             { txt:`🧪 Potion (${getInt(STORAGE.potions)})`, fn:usePotion },
             { txt:'🏃 Run', fn:runAway }
         ].forEach(a => {
-            const b = createButton(a.txt, a.fn, 'btn btn-success');
+            const b = createButton(a.txt, a.fn);
             b.style.flex = '1';
             ctl.appendChild(b);
         });
@@ -959,7 +1064,7 @@ GM.xmlHttpRequest({
         const sleepBtn = createButton('🌙 Sleep Powder', () => {
             wildSleepTurns = 1;
             drawBattle(`${wild.name} fell asleep!`);
-        }, 'btn btn-success');
+        });
         sleepBtn.style.flex = '1';
         ctl.appendChild(sleepBtn);
 
@@ -1008,8 +1113,10 @@ GM.xmlHttpRequest({
 
         animatePartnerHit();
         playSound('hit');
-
+        renderHeader();
         if (pHP <= 0) {
+            SOUNDS.battleSound.pause();
+            SOUNDS.battleSound.currentTime = 0;
             playSound('lose');
             drawBattle(`You were knocked out...`);
             setTimeout(closeBattle, 1500);
@@ -1038,8 +1145,8 @@ GM.xmlHttpRequest({
 
         setInt(STORAGE.coins, getInt(STORAGE.coins) + reward);
         gainXP(Math.floor(xp));
-        battleSound.pause();
-        battleSound.currentTime = 0;
+        SOUNDS.battleSound.pause();
+        SOUNDS.battleSound.currentTime = 0;
         playSound('victory');
         drawBattle(`You defeated ${wild.name}! +${reward} coins, +${wMaxHP} XP`);
         setTimeout(closeBattle, 1500);
@@ -1102,8 +1209,8 @@ GM.xmlHttpRequest({
                 }
 
                 // 3) rest of your catch flow
-                battleSound.pause();
-                battleSound.currentTime = 0;
+                SOUNDS.battleSound.pause();
+                SOUNDS.battleSound.currentTime = 0;
                 playSound('catch');
                 drawBattle(`Caught ${wild.name}!`);
                 setTimeout(closeBattle, 1500);
@@ -1111,8 +1218,8 @@ GM.xmlHttpRequest({
             onerror(err) {
                 console.warn('Failed to fetch Pokémon for Pokédex:', err);
                 // still finish the catch
-                battleSound.pause();
-                battleSound.currentTime = 0;
+                SOUNDS.battleSound.pause();
+                SOUNDS.battleSound.currentTime = 0;
                 playSound('catch');
                 drawBattle(`Caught ${wild.name}!`);
                 setTimeout(closeBattle, 1500);
@@ -1125,9 +1232,12 @@ GM.xmlHttpRequest({
         setInt(STORAGE.potions, getInt(STORAGE.potions) - 1);
         pHP = Math.min(getStats(starterName).hp, pHP + 30);
         drawBattle('You used a Potion.');
+        renderHeader();
         setTimeout(wildAttack, 500);
     }
     function runAway() {
+        SOUNDS.battleSound.pause();
+        SOUNDS.battleSound.currentTime = 0;
         playSound('run');
         drawBattle('You ran away!');
         setTimeout(closeBattle, 500);
@@ -1282,7 +1392,7 @@ GM.xmlHttpRequest({
             const btn = createButton(crit, () => {
                 currentSort = crit;
                 drawBagSorted(currentSort, msg);
-            }, 'btn btn-success');
+            });
 
             btn.style.marginRight = '6px';
             sortOptions.appendChild(btn);
@@ -1291,7 +1401,6 @@ GM.xmlHttpRequest({
 
         drawBagSorted(currentSort, msg);
     }
-
     function drawBagSorted(sortBy, msg) {
         const party = getObj(STORAGE.party);
         const names = Object.keys(party);
@@ -1324,11 +1433,20 @@ GM.xmlHttpRequest({
                 row.style.margin = '4px 0';
 
                 const img = document.createElement('img');
-                img.src = `https://play.pokemonshowdown.com/sprites/ani/${name}.gif`;
+                let isShiny = name.toLowerCase().includes('shiny');
+                let rawName = name.toLowerCase().replace('shiny ', ''); // remove "Shiny " if present
+
+                // Fix known form names if needed (optional: use SPRITE_NAME_FIXES here)
+                if (SPRITE_NAME_FIXES[rawName]) {
+                    rawName = SPRITE_NAME_FIXES[rawName];
+                }
+
+                img.src = `https://play.pokemonshowdown.com/sprites/${isShiny ? 'ani-shiny' : 'ani'}/${rawName}.gif`;
+
                 img.style.width = '40px';
 
                 const lbl = document.createElement('span');
-                lbl.textContent = `${name[0].toUpperCase() + name.slice(1)} x${count}`;
+                lbl.textContent = `${name} x${count}`;
 
                 const rarity = getRarity(name);
                 const stats = getStats(name);
@@ -1358,8 +1476,7 @@ GM.xmlHttpRequest({
                     setStr(STORAGE.starter, name);
                     fetchPartner(name);
                     renderHeader();
-                }, 'btn btn-success');
-
+                });
 
                 const btnSell = createButton(`Sell (${value}c)`, () => {
                     const p = getObj(STORAGE.party);
@@ -1367,15 +1484,13 @@ GM.xmlHttpRequest({
                     setObj(STORAGE.party, p);
                     setInt(STORAGE.coins, getInt(STORAGE.coins) + value);
                     drawBagSorted(sortBy, `${name} sold for ${value} coins.`);
-                }, 'btn btn-success');
+                });
 
                 const controls = document.createElement('div');
-                controls.classList = 'd-flex gap-1';
                 controls.appendChild(btnSet);
                 controls.appendChild(btnSell);
 
                 const left = document.createElement('div');
-                left.classList = 'p-2';
                 left.style.display = 'flex';
                 left.style.alignItems = 'center';
                 left.style.gap = '6px';
@@ -1389,11 +1504,10 @@ GM.xmlHttpRequest({
 
         bagPanel.innerHTML = '<strong>Your Pokémon Bag:</strong><br>';
         bagPanel.appendChild(container);
-        const closeBtn = createButton('❌ Close', closeBag, 'btn btn-success');
+        const closeBtn = createButton('❌ Close', closeBag);
         closeBtn.style.marginTop = '10px';
         bagPanel.appendChild(closeBtn);
     }
-
     function closeBag() {
         if (bagPanel) document.body.removeChild(bagPanel);
         bagPanel = null;
@@ -1443,13 +1557,13 @@ GM.xmlHttpRequest({
     if (randomBattleEnabled) scheduleRandomBattle();
 
     // 🔁 Update the random battle timer every second
-    /*setInterval(() => {
+    setInterval(() => {
         const now = Date.now();
         if ((randomBattleEnabled && nextBattleTime) || getInt(STORAGE.pokestopCooldown) > now) {
             renderHeader();
         }
     }, 1000);
-    */
+
 
     unsafeWindow.changePokemon = name => { GM_setValue(STORAGE.starter, name); fetchPartner(name); };
 })();
