@@ -17,11 +17,11 @@ class Database {
     /** @var string Database host */
     private string $host     = 'localhost';
     /** @var string Database username */
-    private string $username = 'my_user';
+    private string $username = 'esrobbie';
     /** @var string Database password */
-    private string $password = 'my_secret_pass';
+    private string $password = 'pCo9vAF5bm1P(F@1';
     /** @var string Database name */
-    private string $dbname   = 'my_database';
+    private string $dbname   = 'pokeapi';
     /** @var int Database port */
     private int    $port     = 3306;
     /** @var string Connection charset */
@@ -43,12 +43,12 @@ class Database {
     /**
      * Disable cloning of the singleton instance.
      */
-    private function __clone() {}
+    public function __clone() {}
 
     /**
      * Disable unserialization of the singleton instance.
      */
-    private function __wakeup() {}
+    public function __wakeup() {}
 
     /**
      * Retrieves the shared Database instance.
@@ -92,8 +92,18 @@ class Database {
      * @return string Raw JSON response
      * @throws Exception on HTTP or cURL error
      */
-    private function getPokemonJson(string $name): string {
-        $url = 'https://pokeapi.co/api/v2/pokemon/' . urlencode(strtolower($name));
+    /**
+     * Sends a GET request to the PokéAPI for a given endpoint or full URL.
+     *
+     * @param string $endpoint Name or full URL
+     * @return string Raw JSON
+     * @throws Exception on HTTP or cURL error
+     */
+    private function getPokemonJson(string $endpoint): string {
+        $url = preg_match('#^https?://#i', $endpoint)
+            ? $endpoint
+            : 'https://pokeapi.co/api/v2/pokemon/' . urlencode(strtolower($endpoint));
+
         $ch = curl_init($url);
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
         curl_setopt($ch, CURLOPT_TIMEOUT, 5);
@@ -101,40 +111,105 @@ class Database {
         if ($json === false) {
             throw new Exception('cURL error: ' . curl_error($ch));
         }
-        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
         curl_close($ch);
-        if ($httpCode !== 200) {
-            throw new Exception("PokéAPI returned HTTP $httpCode for '$name'");
+        if ($code !== 200) {
+            throw new Exception("PokéAPI returned HTTP $code for '$endpoint'");
         }
         return $json;
     }
-
+    private function getPokemonFormData(string $url): array {
+        $raw  = $this->getPokemonJson($url);
+        $data = json_decode($raw, true);
+        if (!isset($data['sprites'])) {
+            throw new Exception('Invalid form data at ' . $url);
+        }
+        return [
+            'name'  => $data['form_name'] ?? $data['name'] ?? '',
+            'image' => $data['sprites']['front_default'] ?? null,
+        ];
+    }
     /**
-     * Parses Pokémon data into a structured array.
+     * Fetches full data for a Pokémon, including types and all variant forms via species.
      *
-     * @param string $name Pokémon name
-     * @return array Parsed data: ['name', 'image', 'stats', 'moves']
+     * @param string $name Pokémon name or ID
+     * @return array Parsed data with keys:
+     *   - pokeDex_num
+     *   - name
+     *   - base_image
+     *   - shiny_image
+     *   - base_experience
+     *   - types [ {slot, type: {name, url}}, ... ]
+     *   - stats [ {name, value}, ... ]
+     *   - moves [ ... ]
+     *   - variants [ {name, image}, ... ]
      * @throws Exception if API response is invalid
      */
     public function getPokemonData(string $name): array {
+        // Primary Pokémon resource
         $raw  = $this->getPokemonJson($name);
         $data = json_decode($raw, true);
         if (!isset($data['stats'])) {
             throw new Exception('Invalid PokéAPI data for ' . $name);
         }
-        $image = $data['sprites']['front_default'] ?? null;
+
+        $pokedexNum = $data['id'] ?? null;
+        $baseXp     = $data['base_experience'] ?? null;
+        $baseImage  = $data['sprites']['front_default'] ?? null;
+        $shinyImage = $data['sprites']['front_shiny'] ?? null;
+
+        // Types
+        $types = [];
+        foreach ($data['types'] as $t) {
+            $types[] = [
+                'slot' => $t['slot'],
+                'type' => [
+                    'name' => $t['type']['name'],
+                    'url'  => $t['type']['url'],
+                ],
+            ];
+        }
+
+        // Stats
         $stats = array_map(static fn($s) => [
             'name'  => $s['stat']['name'],
             'value' => $s['base_stat'],
         ], $data['stats']);
+
+        // Moves
         $moves = array_map(static fn($m) => $m['move']['name'], $data['moves']);
+
+        // Variants via species varieties
+        $variants = [];
+        if (isset($data['species']['url'])) {
+            $speciesRaw = $this->getPokemonJson($data['species']['url']);
+            $species    = json_decode($speciesRaw, true);
+            foreach ($species['varieties'] as $var) {
+                $varName = $var['pokemon']['name'];
+                $varUrl  = $var['pokemon']['url'];
+                // fetch each variety sprite
+                $vRaw  = $this->getPokemonJson($varUrl);
+                $vData = json_decode($vRaw, true);
+                $variants[] = [
+                    'name'  => $varName,
+                    'image' => $vData['sprites']['front_default'] ?? null,
+                ];
+            }
+        }
+
         return [
-            'name'  => $data['name'] ?? $name,
-            'image' => $image,
-            'stats' => $stats,
-            'moves' => $moves,
+            'pokeDex_num'     => $pokedexNum,
+            'name'            => $data['name'] ?? $name,
+            'base_image'      => $baseImage,
+            'shiny_image'     => $shinyImage,
+            'base_experience' => $baseXp,
+            'types'           => $types,
+            'stats'           => $stats,
+            'moves'           => $moves,
+            'variants'        => $variants,
         ];
     }
+
 
     // === User Pokémon Storage ===
 
@@ -151,10 +226,18 @@ class Database {
         $details = $this->getPokemonData($pokemonName);
         $details['isStarter'] = $isStarter;
         $json = json_encode($details, JSON_UNESCAPED_UNICODE);
-        $sql  = 'INSERT INTO user_pokemon (username, pokemon_data) VALUES (?, ?)';
-        $stmt = $this->execute($sql, 'ss', [$username, $json]);
+
+        // add a third placeholder for isStarter
+        $sql  = 'INSERT INTO user_pokemon (username, pokemon_data, isStarter) VALUES (?, ?, ?)';
+        // bind as string, string, integer
+        $stmt = $this->execute($sql, 'ssi', [
+            $username,
+            $json,
+            $isStarter ? 1 : 0
+        ]);
         $stmt->close();
     }
+
 
     /**
      * Retrieves a specific Pokémon JSON for a user.
@@ -175,21 +258,25 @@ class Database {
 
     /**
      * Allows a user to choose their starter Pokémon.
+     * Ensures no existing record for the same username before inserting.
      *
-     * @param string $username User selecting starter
-     * @param string $starterName Starter Pokémon name
+     * @param string $username     User selecting starter
+     * @param string $starterName  Starter Pokémon name
      * @return void
-     * @throws Exception if starter already chosen or on storage error
+     * @throws Exception if user already initialized or on storage error
      */
     public function chooseStarter(string $username, string $starterName): void {
-        // Ensure no prior starter
-        $sql = "SELECT COUNT(*) AS cnt FROM user_pokemon
-                WHERE username = ?
-                  AND JSON_UNQUOTE(JSON_EXTRACT(pokemon_data, '$.isStarter')) = '1'";
-        $row = $this->fetch($sql, 's', [$username]);
+        // 1) Check if this user already has any Pokémon stored
+        $row = $this->fetch(
+            'SELECT COUNT(*) AS cnt FROM user_pokemon WHERE username = ?',
+            's',
+            [$username]
+        );
         if (!empty($row['cnt'])) {
-            throw new Exception('Starter already chosen for ' . $username);
+            throw new Exception("User '{$username}' already initialized; cannot choose starter again.");
         }
+
+        // 2) No record yet—store the starter
         $this->storePokemonForUser($username, $starterName, true);
     }
 
