@@ -313,14 +313,27 @@ GM.xmlHttpRequest({
     wrap.classList = 'bg-dark bg-opacity-50 border border-1 border-dark';
     document.body.appendChild(wrap);
 
-    function createButton(label, onClick, customClass='') {
+    function createButton(label, onClick, customClass = '', hasUpdate = false) {
         const btn = document.createElement('button');
-        btn.classList = customClass;
-        btn.textContent = label;
+        btn.className = customClass;
         btn.style.border = '1px solid black';
         btn.style.padding = '4px 8px';
         btn.style.color = 'black';
         btn.onclick = onClick;
+
+        // Wrap label in a span so we can attach badge
+        const span = document.createElement('span');
+        span.textContent = label;
+        btn.appendChild(span);
+
+        // Add badge if update is available
+        if (hasUpdate) {
+            const badge = document.createElement('span');
+            badge.className = "badge rounded-pill bg-danger top-0 translate-middle position-relative";
+            badge.textContent = "!"; // or "?" or number
+            btn.appendChild(badge);
+        }
+
         return btn;
     }
 
@@ -439,7 +452,8 @@ GM.xmlHttpRequest({
         row.appendChild(createButton('🎒 Bag',openBag,'btn btn-success btn-sm'));
         row.appendChild(createButton('📖 Pokédex',openPokedex,'btn btn-success btn-sm'));
         // row.appendChild(createButton('👥 Party',openParty,'btn btn-success btn-sm'));
-        row.appendChild(createButton('⚙️ Settings',openSettings, 'btn btn-success btn-sm'));
+
+        row.appendChild(createButton('⚙️ Settings',openSettings, 'btn btn-success btn-sm', true));
 
         wrap.appendChild(row);
     }
