@@ -4,7 +4,7 @@
 // @connect     pokeapi.co
 // @connect     https://dstokesncstudio.com/pokeapi/pokeapi.php
 // @namespace   dstokesncstudio.com
-// @version     1.3.0.0
+// @version     1.2.0.2
 // @description Full version with XP, evolution, stats, sound, shop, battles, and walking partner — persistent across sites.
 // @include     *
 // @grant       GM.xmlHttpRequest
@@ -128,6 +128,8 @@ GM.xmlHttpRequest({
   async function tampermonkeyNeedsUpdate() {
     try {
       const remoteVersion = await fetchRemoteVersion(DOWNLOAD_URL);
+      console.log("RemoteVersion: " + remoteVersion);
+      console.log("CURRENTVERSION: " + CURRENT_VERSION);
       if (!remoteVersion) return false; // couldn't fetch or parse
       return compareVersions(remoteVersion, CURRENT_VERSION) > 0;
     } catch {
