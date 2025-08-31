@@ -4,7 +4,7 @@
 // @connect     pokeapi.co
 // @connect     https://dstokesncstudio.com/pokeapi/pokeapi.php
 // @namespace   dstokesncstudio.com
-// @version     1.3.0.0
+// @version     3.0.0.0
 // @description Full version with XP, evolution, stats, sound, shop, battles, and walking partner — persistent across sites.
 // @include     *
 // @grant       GM.xmlHttpRequest
@@ -64,75 +64,75 @@ GM.xmlHttpRequest({
     typeof GM_info !== "undefined" && GM_info.script && GM_info.script.version
       ? GM_info.script.version
       : "0.0.0";
-    const rVersion = fetchRemoteVersion(DOWNLOAD_URL);
-      console.log("RemoteVersion: " + rVersion);
-      console.log("CURRENTVERSION: " + CURRENT_VERSION);
+  const rVersion = fetchRemoteVersion(DOWNLOAD_URL);
+  console.log("RemoteVersion: " + rVersion);
+  console.log("CURRENTVERSION: " + CURRENT_VERSION);
   // ====== UPDATE CHECK ======
   // ====== VERSION COMPARISON (hardened) ======
-function normalizeVersion(v, length = 4) {
-  // "v1.2.3" -> [1,2,3,0]
-  // "1.2.3-beta.1" -> [1,2,3,1]
-  // "1.0.0.0" -> [1,0,0,0]
-  // "1.2" -> [1,2,0,0]
-  if (!v) return Array.from({ length }, () => 0);
-  v = String(v).trim().replace(/^v/i, ""); // strip leading 'v'
-  const parts = v.split(/[.\-]/).map(seg => {
-    const m = String(seg).match(/^\d+/); // take leading digits only
-    return m ? parseInt(m[0], 10) : 0;
-  });
-  while (parts.length < length) parts.push(0);
-  if (parts.length > length) parts.length = length;
-  return parts;
-}
-
-// returns 1 if a>b, 0 if equal, -1 if a<b
-function compareVersions(a, b) {
-  const A = normalizeVersion(a, 4);
-  const B = normalizeVersion(b, 4);
-  for (let i = 0; i < A.length; i++) {
-    if (A[i] > B[i]) return 1;
-    if (A[i] < B[i]) return -1;
-  }
-  return 0;
-}
-
-// ====== FETCH REMOTE VERSION ======
-function fetchRemoteVersion(url) {
-  return new Promise((resolve) => {
-    GM_xmlhttpRequest({
-      method: "GET",
-      url: url, // bust cache
-      headers: { "Cache-Control": "no-cache", Pragma: "no-cache" },
-      responseType: "text",
-      onload: (res) => {
-        if (res.status >= 200 && res.status < 300 && res.responseText) {
-          const m = res.responseText.match(/@version\s+([^\s]+)/i);
-          resolve(m ? m[1].trim() : null);
-        } else {
-          resolve(null);
-        }
-      },
-      onerror: () => resolve(null),
-      ontimeout: () => resolve(null),
+  function normalizeVersion(v, length = 4) {
+    // "v1.2.3" -> [1,2,3,0]
+    // "1.2.3-beta.1" -> [1,2,3,1]
+    // "1.0.0.0" -> [1,0,0,0]
+    // "1.2" -> [1,2,0,0]
+    if (!v) return Array.from({ length }, () => 0);
+    v = String(v).trim().replace(/^v/i, ""); // strip leading 'v'
+    const parts = v.split(/[.\-]/).map((seg) => {
+      const m = String(seg).match(/^\d+/); // take leading digits only
+      return m ? parseInt(m[0], 10) : 0;
     });
-  });
-}
-
-/**
- * Checks if there is an update available for this userscript.
- * @returns {Promise<boolean>} true if remote version > CURRENT_VERSION
- */
-async function tampermonkeyNeedsUpdate() {
-  try {
-    const remoteVersion = await fetchRemoteVersion(DOWNLOAD_URL);
-    if (!remoteVersion) return false;
-    // Debug (optional)
-    // console.log('remote:', remoteVersion, 'local:', CURRENT_VERSION, 'cmp:', compareVersions(remoteVersion, CURRENT_VERSION));
-    return compareVersions(remoteVersion, CURRENT_VERSION) > 0;
-  } catch {
-    return false;
+    while (parts.length < length) parts.push(0);
+    if (parts.length > length) parts.length = length;
+    return parts;
   }
-}
+
+  // returns 1 if a>b, 0 if equal, -1 if a<b
+  function compareVersions(a, b) {
+    const A = normalizeVersion(a, 4);
+    const B = normalizeVersion(b, 4);
+    for (let i = 0; i < A.length; i++) {
+      if (A[i] > B[i]) return 1;
+      if (A[i] < B[i]) return -1;
+    }
+    return 0;
+  }
+
+  // ====== FETCH REMOTE VERSION ======
+  function fetchRemoteVersion(url) {
+    return new Promise((resolve) => {
+      GM_xmlhttpRequest({
+        method: "GET",
+        url: url, // bust cache
+        headers: { "Cache-Control": "no-cache", Pragma: "no-cache" },
+        responseType: "text",
+        onload: (res) => {
+          if (res.status >= 200 && res.status < 300 && res.responseText) {
+            const m = res.responseText.match(/@version\s+([^\s]+)/i);
+            resolve(m ? m[1].trim() : null);
+          } else {
+            resolve(null);
+          }
+        },
+        onerror: () => resolve(null),
+        ontimeout: () => resolve(null),
+      });
+    });
+  }
+
+  /**
+   * Checks if there is an update available for this userscript.
+   * @returns {Promise<boolean>} true if remote version > CURRENT_VERSION
+   */
+  async function tampermonkeyNeedsUpdate() {
+    try {
+      const remoteVersion = await fetchRemoteVersion(DOWNLOAD_URL);
+      if (!remoteVersion) return false;
+      // Debug (optional)
+      // console.log('remote:', remoteVersion, 'local:', CURRENT_VERSION, 'cmp:', compareVersions(remoteVersion, CURRENT_VERSION));
+      return compareVersions(remoteVersion, CURRENT_VERSION) > 0;
+    } catch {
+      return false;
+    }
+  }
 
   // Check if current URL matches any blocklist rule
   if (BLOCKLIST.some((rx) => rx.test(location.href))) return;
@@ -1240,132 +1240,132 @@ async function tampermonkeyNeedsUpdate() {
 
     renderSettings();
   }
-async function renderSettings() {
-  if (!settingsPanel) return;
-  settingsPanel.innerHTML = "<strong>Settings</strong><br><br>";
+  async function renderSettings() {
+    if (!settingsPanel) return;
+    settingsPanel.innerHTML = "<strong>Settings</strong><br><br>";
 
-  // Sound On/Off Toggle
-  const soundToggle = createButton(
-    `Sound: ${getBool(STORAGE.soundOn) ? "On" : "Off"}`,
-    () => {
-      const current = getBool(STORAGE.soundOn);
-      const newVal = !current;
-      setBool(STORAGE.soundOn, newVal);
+    // Sound On/Off Toggle
+    const soundToggle = createButton(
+      `Sound: ${getBool(STORAGE.soundOn) ? "On" : "Off"}`,
+      () => {
+        const current = getBool(STORAGE.soundOn);
+        const newVal = !current;
+        setBool(STORAGE.soundOn, newVal);
 
-      if (!newVal) {
-        Object.values(SOUNDS).forEach((audio) => {
-          if (audio instanceof Audio) {
-            audio.pause();
-            audio.currentTime = 0;
-          }
-        });
+        if (!newVal) {
+          Object.values(SOUNDS).forEach((audio) => {
+            if (audio instanceof Audio) {
+              audio.pause();
+              audio.currentTime = 0;
+            }
+          });
+        }
+
+        renderSettings();
+      },
+      "btn btn-info"
+    );
+
+    // Volume Slider
+    const volumeSlider = document.createElement("input");
+    volumeSlider.type = "range";
+    volumeSlider.min = 0;
+    volumeSlider.max = 1;
+    volumeSlider.step = 0.01;
+    volumeSlider.value = getStr(STORAGE.volume, "0.4");
+    volumeSlider.style.width = "100%";
+    volumeSlider.oninput = () => {
+      const vol = parseFloat(volumeSlider.value);
+      setStr(STORAGE.volume, volumeSlider.value);
+      Object.values(SOUNDS).forEach((a) => {
+        if (a instanceof Audio) a.volume = vol;
+      });
+    };
+
+    // Change Starter
+    const starterBtn = createButton(
+      "🔄 Change Starter",
+      openStarter,
+      "btn btn-success"
+    );
+
+    // Random Battle Toggle
+    const randomBattleToggle = createButton(
+      `Random Battles: ${randomBattleEnabled ? "On" : "Off"}`,
+      toggleRandomBattles,
+      "btn btn-success"
+    );
+
+    // Update Pokedex and data from old version //
+    const pokedexBtn = createButton(
+      "Upgrade Pokédex",
+      upgradeOldPokedexEntries,
+      "btn btn-warning mt-2"
+    );
+
+    // Reset Game Button
+    const resetBtn = createButton(
+      "🗑️ Reset Game",
+      resetGameData,
+      "btn btn-warning"
+    );
+    resetBtn.style.color = "black";
+    resetBtn.style.marginTop = "12px";
+
+    // Update Button (only if update available)
+    let updateBtn = null;
+    try {
+      const hasUpdate = await tampermonkeyNeedsUpdate();
+      if (hasUpdate) {
+        updateBtn = createButton(
+          "⬆️ Update Available",
+          () => {
+            window.open(DOWNLOAD_URL, "_blank");
+          },
+          "btn btn-danger"
+        );
+        updateBtn.style.marginTop = "12px";
       }
-
-      renderSettings();
-    },
-    "btn btn-info"
-  );
-
-  // Volume Slider
-  const volumeSlider = document.createElement("input");
-  volumeSlider.type = "range";
-  volumeSlider.min = 0;
-  volumeSlider.max = 1;
-  volumeSlider.step = 0.01;
-  volumeSlider.value = getStr(STORAGE.volume, "0.4");
-  volumeSlider.style.width = "100%";
-  volumeSlider.oninput = () => {
-    const vol = parseFloat(volumeSlider.value);
-    setStr(STORAGE.volume, volumeSlider.value);
-    Object.values(SOUNDS).forEach((a) => {
-      if (a instanceof Audio) a.volume = vol;
-    });
-  };
-
-  // Change Starter
-  const starterBtn = createButton(
-    "🔄 Change Starter",
-    openStarter,
-    "btn btn-success"
-  );
-
-  // Random Battle Toggle
-  const randomBattleToggle = createButton(
-    `Random Battles: ${randomBattleEnabled ? "On" : "Off"}`,
-    toggleRandomBattles,
-    "btn btn-success"
-  );
-
-  // Update Pokedex and data from old version //
-  const pokedexBtn = createButton(
-    "Upgrade Pokédex",
-    upgradeOldPokedexEntries,
-    "btn btn-warning mt-2"
-  );
-
-  // Reset Game Button
-  const resetBtn = createButton(
-    "🗑️ Reset Game",
-    resetGameData,
-    "btn btn-warning"
-  );
-  resetBtn.style.color = "black";
-  resetBtn.style.marginTop = "12px";
-
-  // Update Button (only if update available)
-  let updateBtn = null;
-  try {
-    const hasUpdate = await tampermonkeyNeedsUpdate();
-    if (hasUpdate) {
-      updateBtn = createButton(
-        "⬆️ Update Available",
-        () => {
-          window.open(DOWNLOAD_URL, "_blank");
-        },
-        "btn btn-danger"
-      );
-      updateBtn.style.marginTop = "12px";
+    } catch (e) {
+      console.error("Update check failed", e);
     }
-  } catch (e) {
-    console.error("Update check failed", e);
+
+    // Close Button
+    const closeBtn = createButton(
+      "❌ Close",
+      () => {
+        document.body.removeChild(settingsPanel);
+        settingsPanel = null;
+      },
+      "btn btn-success"
+    );
+
+    // Append everything
+    settingsPanel.append(
+      soundToggle,
+      document.createElement("br"),
+      volumeSlider,
+      document.createElement("br"),
+      document.createElement("br"),
+      starterBtn,
+      document.createElement("br"),
+      document.createElement("br"),
+      randomBattleToggle,
+      document.createElement("br"),
+      document.createElement("br"),
+      resetBtn,
+      document.createElement("br"),
+      document.createElement("br"),
+      pokedexBtn,
+      document.createElement("br")
+    );
+
+    if (updateBtn) {
+      settingsPanel.append(updateBtn, document.createElement("br"));
+    }
+
+    settingsPanel.append(closeBtn);
   }
-
-  // Close Button
-  const closeBtn = createButton(
-    "❌ Close",
-    () => {
-      document.body.removeChild(settingsPanel);
-      settingsPanel = null;
-    },
-    "btn btn-success"
-  );
-
-  // Append everything
-  settingsPanel.append(
-    soundToggle,
-    document.createElement("br"),
-    volumeSlider,
-    document.createElement("br"),
-    document.createElement("br"),
-    starterBtn,
-    document.createElement("br"),
-    document.createElement("br"),
-    randomBattleToggle,
-    document.createElement("br"),
-    document.createElement("br"),
-    resetBtn,
-    document.createElement("br"),
-    document.createElement("br"),
-    pokedexBtn,
-    document.createElement("br")
-  );
-
-  if (updateBtn) {
-    settingsPanel.append(updateBtn, document.createElement("br"));
-  }
-
-  settingsPanel.append(closeBtn);
-}
 
   function renderFilteredList(names, container, searchEl) {
     const filter = searchEl.value.toLowerCase();
@@ -1556,27 +1556,139 @@ button .badge.bg-danger {
     setStats(starterName, { ...stats, currentHP: pHP });
   }
   // === Battle System ===
-  let battlePanel, wild, pHP, wHP, wMaxHP;
-  function openBattle() {
-    if (battlePanel) return;
-    battlePanel = document.createElement("div");
-    battlePanel.classList += " pixel-frame";
-    Object.assign(battlePanel.style, {
-      position: "fixed",
-      top: "50%",
-      left: "50%",
-      transform: "translate(-50%,-50%)",
-      color: "#fff",
-      padding: "0px",
-      zIndex: "10000",
-      width: "280px",
-    });
-    document.body.appendChild(battlePanel);
-    if (getBool(STORAGE.soundOn)) {
-      SOUNDS.battleSound.play();
-    }
-    startBattle();
+  // --- Battle styles (inject once) ---
+  (function injectBattleStyles() {
+    if (document.getElementById("pk-battle-styles")) return;
+    const css = `
+  :root{
+    --pk-bg:#1a1333;
+    --pk-accent:#ffd166;
+    --pk-text:#e9e7ff;
+    --pk-muted:#c6c2ee;
+    --pk-glass: rgba(255,255,255,0.06);
   }
+  .pk-card{
+    position:relative;
+    background: linear-gradient(180deg, rgba(255,255,255,0.04), var(--pk-glass)), var(--pk-bg);
+    color:var(--pk-text);
+    border: 2px solid var(--pk-accent);
+    border-radius: 18px;
+    padding: 12px;
+    box-shadow: 0 12px 30px rgba(0,0,0,0.45), inset 0 0 0 1px rgba(255,255,255,0.05);
+    backdrop-filter: blur(6px);
+  }
+  .pk-header{ display:grid; grid-template-columns:72px 1fr; gap:10px; align-items:center; margin-bottom:8px; }
+  .pk-sprite{ width:72px; height:72px; display:flex; align-items:center; justify-content:center; border-radius:12px;
+              background: radial-gradient(ellipse at 50% 60%, rgba(255,255,255,0.12), transparent 60%); }
+  .pk-title{ font-weight:700; line-height:1.2; }
+  .pk-sub{ color:var(--pk-muted); font-size:12px; }
+  .pk-hp{ margin-top:6px; }
+  .pk-hpbar{ position:relative; height:10px; border-radius:999px; overflow:hidden;
+             background: linear-gradient(90deg, rgba(255,255,255,0.08), rgba(255,255,255,0.02));
+             box-shadow: inset 0 1px 2px rgba(0,0,0,0.5); }
+  .pk-hpfill{ height:100%; background: linear-gradient(90deg, #27e3b1, #35c1ff); width:0%; transition: width .35s ease; }
+  .pk-hptext{ font-size:12px; margin-top:4px; color:var(--pk-muted); }
+  .pk-chips{ display:flex; gap:6px; margin:8px 0 2px; flex-wrap:wrap; }
+  .pk-chip{ font-size:11px; padding:2px 8px; border-radius:999px; background:rgba(255,255,255,0.07); border:1px solid rgba(255,255,255,0.08); }
+  .pk-chip.sleep { background:rgba(76,201,240,0.18);  border-color:#4cc9f040; }
+  .pk-chip.poison{ background:rgba(146,205,91,0.18); border-color:#92cd5b40; }
+  .pk-chip.burn  { background:rgba(255,102,71,0.18); border-color:#ff664740; }
+  .pk-controls{ display:grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap:8px; margin-top:10px; }
+  .pk-btn{ position: relative; background: linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.03));
+           border:1px solid rgba(255,255,255,0.10); border-radius:12px; padding:10px 8px;
+           display:flex; flex-direction:column; align-items:center; gap:6px; color:var(--pk-text);
+           text-align:center; font-size:13px; cursor:pointer; box-shadow: 0 4px 12px rgba(0,0,0,0.25);
+           transition: transform .06s ease, box-shadow .12s ease, border-color .12s ease; }
+  .pk-btn:hover{ transform: translateY(-1px); border-color:rgba(255,255,255,0.2); box-shadow:0 8px 20px rgba(0,0,0,0.35); }
+  .pk-btn:active{ transform: translateY(0); }
+  .pk-btn.disabled{ opacity:.45; cursor:not-allowed; filter:grayscale(.2); }
+  .pk-ico{ font-size:20px; line-height:1; }
+  .pk-label{ font-size:12px; }
+  .pk-badge{ position:absolute; top:6px; right:6px; background:#2b214f; color:#fff; border:1px solid rgba(255,255,255,0.15);
+             padding:2px 6px; border-radius:999px; font-size:11px; }
+  .pk-catch{ margin-top:4px; font-size:12px; color:var(--pk-muted); }
+  `;
+    const style = document.createElement("style");
+    style.id = "pk-battle-styles";
+    style.textContent = css;
+    document.head.appendChild(style);
+  })();
+
+  // --- Small helpers ---
+  function buildHPBar(idPrefix, current, max) {
+    const wrap = document.createElement("div");
+    wrap.className = "pk-hp";
+    wrap.innerHTML = `
+    <div class="pk-hpbar"><div id="${idPrefix}-fill" class="pk-hpfill"></div></div>
+    <div id="${idPrefix}-text" class="pk-hptext"></div>
+  `;
+    updateHPBar(idPrefix, current, max);
+    return wrap;
+  }
+  function updateHPBar(idPrefix, current, max) {
+    const pct = Math.max(
+      0,
+      Math.min(100, Math.round((current / Math.max(1, max)) * 100))
+    );
+    const fill = document.getElementById(`${idPrefix}-fill`);
+    const text = document.getElementById(`${idPrefix}-text`);
+    if (fill) fill.style.width = pct + "%";
+    if (text) text.textContent = `${current}/${max} HP (${pct}%)`;
+  }
+  function makeChip(text, type) {
+    const c = document.createElement("span");
+    c.className = `pk-chip ${type || ""}`;
+    c.textContent = text;
+    return c;
+  }
+  function makePkButton(onClick, opts = {}) {
+    const {
+      icon = "🎯",
+      label = "Action",
+      count = null,
+      disabled = false,
+    } = opts;
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "pk-btn";
+    btn.innerHTML = `<div class="pk-ico">${icon}</div><div class="pk-label">${label}</div>`;
+    if (count !== null) {
+      const b = document.createElement("div");
+      b.className = "pk-badge";
+      b.textContent = count;
+      btn.appendChild(b);
+    }
+    if (disabled) {
+      btn.classList.add("disabled");
+      btn.disabled = true;
+    }
+    btn.onclick = disabled ? null : onClick;
+    return btn;
+  }
+
+  let battlePanel, wild, pHP, wHP, wMaxHP;
+function openBattle() {
+  if (battlePanel) return;
+  battlePanel = document.createElement("div");
+  Object.assign(battlePanel.style, {
+    position: "fixed",
+    top: "50%",
+    left: "50%",
+    transform: "translate(-50%,-50%)",
+    color: "#fff",
+    padding: "0px",
+    zIndex: "10000",
+    width: "310px",               // a bit wider for the grid
+    maxWidth: "92vw"
+  });
+  document.body.appendChild(battlePanel);
+
+  if (getBool(STORAGE.soundOn)) {
+    try { SOUNDS.battleSound.play(); } catch {}
+  }
+  startBattle(); // this should call drawBattle() initially
+}
+
   function startBattle() {
     const id = Math.floor(Math.random() * 649) + 1;
 
@@ -1626,23 +1738,40 @@ button .badge.bg-danger {
   }
   function drawBattle(msg) {
     battlePanel.innerHTML = "";
-    const main = document.createElement("div");
-    if (msg)
-      main.append(
-        Object.assign(document.createElement("div"), { textContent: msg })
-      );
-    const info = document.createElement("div");
+    battlePanel.classList.add("pk-card"); // style the panel
 
-    Object.assign(main.style, {
-      background: "RGB(53, 35, 87)",
-      zIndex: "1000",
-      position: "relative",
-    });
-    info.classList += " text-capitalize text-center";
-    info.innerHTML = `You HP: ${pHP}<br>${wild.name} HP: ${wHP}/${wMaxHP}`;
-    info.innerHTML += `<br>Form: ${wild.form || "Normal"} | Shiny: ${
-      wild.isShiny ? "Yes" : "No"
-    }`;
+    // optional message line
+    if (msg) {
+      const msgDiv = document.createElement("div");
+      msgDiv.textContent = msg;
+      msgDiv.style.marginBottom = "6px";
+      battlePanel.appendChild(msgDiv);
+    }
+
+    // ----- HEADER (sprite + info + hp + status chips)
+    const header = document.createElement("div");
+    header.className = "pk-header";
+
+    // left sprite
+    const spriteBox = document.createElement("div");
+    spriteBox.className = "pk-sprite";
+    const img = document.createElement("img");
+    img.src = wild.sprite;
+    img.alt = wild.name;
+    img.style.width = "72px";
+    img.style.height = "72px";
+    img.style.animation = "bobWalk 1.2s infinite";
+    img.style.transformOrigin = "center";
+    spriteBox.appendChild(img);
+    header.appendChild(spriteBox);
+
+    // right info
+    const right = document.createElement("div");
+    const title = document.createElement("div");
+    title.className = "pk-title";
+    title.textContent = `Wild ${wild.name}`;
+
+    // compute catch chance like your original
     const partnerLevel = getStats(starterName).level;
     const rarity = getRarity(wild.name);
     const rarityPenalty = { common: 1, uncommon: 1.2, rare: 1.5, legendary: 2 }[
@@ -1651,92 +1780,125 @@ button .badge.bg-danger {
     let chance = (wMaxHP - wHP) / wMaxHP / rarityPenalty + partnerLevel * 0.01;
     if (wildSleepTurns > 0) chance += 0.2;
     chance = Math.min(0.95, Math.max(0.1, chance));
-    info.innerHTML += `<br>Catch Chance: ${(chance * 100).toFixed(1)}%`;
 
-    const img = document.createElement("img");
-    img.src = wild.sprite;
-    img.id = "wild-img";
-    img.classList += " w-auto";
-    Object.assign(img.style, {
-      width: "42",
-      display: "block",
-      animation: "bobWalk 1.2s infinite",
-      transformOrigin: "center",
-    });
+    const sub = document.createElement("div");
+    sub.className = "pk-sub";
+    sub.innerHTML = `
+    You HP: ${pHP}<br>
+    ${wild.name} HP: ${wHP}/${wMaxHP}<br>
+    Form: ${wild.form || "Normal"} | Shiny: ${wild.isShiny ? "Yes" : "No"}
+  `;
 
+    const wildHP = buildHPBar("hp-wild", wHP, wMaxHP);
+    const youHP = buildHPBar("hp-you", pHP, getStats(starterName).hp);
+
+    const chips = document.createElement("div");
+    chips.className = "pk-chips";
+    if (typeof wildSleepTurns === "number" && wildSleepTurns > 0)
+      chips.appendChild(makeChip(`Sleep ${wildSleepTurns}`, "sleep"));
+    if (wildStatus && wildStatus.poison)
+      chips.appendChild(makeChip(`Poison ${wildStatus.poison}`, "poison"));
+    if (wildStatus && wildStatus.burn)
+      chips.appendChild(makeChip(`Burn ${wildStatus.burn}`, "burn"));
+
+    right.append(title, sub, wildHP, youHP, chips);
+    header.appendChild(right);
+    battlePanel.appendChild(header);
+
+    const catchTxt = document.createElement("div");
+    catchTxt.className = "pk-catch";
+    catchTxt.textContent = `Catch Chance: ${(chance * 100).toFixed(1)}%`;
+    battlePanel.appendChild(catchTxt);
+
+    // ----- CONTROLS (grid)
     const ctl = document.createElement("div");
-    Object.assign(ctl.style, {
-      display: "flex",
-      flexWrap: "wrap",
-      gap: "6px",
-      marginTop: "8px",
-    });
-    [
-      { txt: "⚔️ Attack", fn: playerAttack },
-      { txt: `⭕ Ball (${getInt(STORAGE.balls)})`, fn: throwBall },
-      { txt: `🧪 Potion (${getInt(STORAGE.potions)})`, fn: usePotion },
-      { txt: "🏃 Run", fn: runAway },
-    ].forEach((a) => {
-      const b = createButton(a.txt, a.fn);
-      b.style.flex = "1";
-      ctl.appendChild(b);
-    });
-    const xAtkBtn = createButton(
-      `🧪 X-Atk (${getInt("pkm_xattack") || 0})`,
-      useXAttack
+    ctl.className = "pk-controls";
+
+    // main actions
+    ctl.append(
+      makePkButton(playerAttack, { icon: "🗡️", label: "Attack" }),
+      makePkButton(throwBall, {
+        icon: "⭕",
+        label: "Ball",
+        count: getInt(STORAGE.balls),
+      }),
+      makePkButton(usePotion, {
+        icon: "💉",
+        label: "Potion",
+        count: getInt(STORAGE.potions),
+        disabled: getInt(STORAGE.potions) <= 0,
+      }),
+      makePkButton(runAway, { icon: "🏃", label: "Run" })
     );
-    xAtkBtn.style.flex = "1";
-    ctl.appendChild(xAtkBtn);
 
-    const reviveBtn = createButton(
-      `✨ Revive (${getInt("pkm_revive") || 0})`,
-      useRevive
+    // items / specials
+    ctl.append(
+      makePkButton(useXAttack, {
+        icon: "🧪",
+        label: "X-Atk",
+        count: getInt("pkm_xattack"),
+        disabled: getInt("pkm_xattack") <= 0,
+      }),
+      makePkButton(useRevive, {
+        icon: "✨",
+        label: "Revive",
+        count: getInt("pkm_revive"),
+        disabled: getInt("pkm_revive") <= 0,
+      }),
+      makePkButton(
+        () => {
+          // Sleep Powder
+          wildSleepTurns = 1;
+          drawBattle(`${wild.name} fell asleep!`);
+          setTimeout(wildAttack, 500);
+        },
+        { icon: "🌙", label: "Sleep Powder" }
+      ),
+      makePkButton(
+        () => {
+          // Poison Sting
+          const dmg = Math.max(
+            1,
+            Math.floor(
+              getStats(starterName).atk *
+                0.6 *
+                (getStats(starterName).atkBuff || 1)
+            )
+          );
+          wHP = Math.max(0, wHP - dmg);
+          if (typeof wildStatus === "object") wildStatus.poison = 3;
+          drawBattle(`You used Poison Sting! ${wild.name} is poisoned.`);
+          setTimeout(wildAttack, 500);
+        },
+        { icon: "☠️", label: "Poison Sting" }
+      ),
+      makePkButton(
+        () => {
+          // Ember
+          const dmg = Math.max(
+            1,
+            Math.floor(
+              getStats(starterName).atk *
+                0.7 *
+                (getStats(starterName).atkBuff || 1)
+            )
+          );
+          wHP = Math.max(0, wHP - dmg);
+          if (typeof wildStatus === "object") wildStatus.burn = 2;
+          drawBattle(`You used Ember! ${wild.name} is burned.`);
+          setTimeout(wildAttack, 500);
+        },
+        { icon: "🔥", label: "Ember" }
+      )
     );
-    reviveBtn.style.flex = "1";
-    ctl.appendChild(reviveBtn);
-    // ✅ Add Sleep Powder Button Below
-    const sleepBtn = createButton("🌙 Sleep Powder", () => {
-      wildSleepTurns = 1;
-      drawBattle(`${wild.name} fell asleep!`);
-    });
-    sleepBtn.style.flex = "1";
-    ctl.appendChild(sleepBtn);
 
-    // Extra moves
-    const poisonBtn = createButton("☠️ Poison Sting", () => {
-      const dmg = Math.max(
-        1,
-        Math.floor(
-          getStats(starterName).atk * 0.6 * (getStats(starterName).atkBuff || 1)
-        )
-      );
-      wHP = Math.max(0, wHP - dmg);
-      wildStatus.poison = 3; // 3 turns
-      drawBattle(`You used Poison Sting! ${wild.name} is poisoned.`);
-      setTimeout(wildAttack, 500);
-    });
-    poisonBtn.style.flex = "1";
-    ctl.appendChild(poisonBtn);
+    battlePanel.appendChild(ctl);
 
-    const burnBtn = createButton("🔥 Ember", () => {
-      const dmg = Math.max(
-        1,
-        Math.floor(
-          getStats(starterName).atk * 0.7 * (getStats(starterName).atkBuff || 1)
-        )
-      );
-      wHP = Math.max(0, wHP - dmg);
-      wildStatus.burn = 2; // 2 turns
-      drawBattle(`You used Ember! ${wild.name} is burned.`);
-      setTimeout(wildAttack, 500);
-    });
-    burnBtn.style.flex = "1";
-    ctl.appendChild(burnBtn);
-
-    main.append(img, info);
-    main.appendChild(ctl);
-    battlePanel.append(main);
+    // keep HP bars in sync if anything changed mid-draw
+    updateHPBar("hp-wild", wHP, wMaxHP);
+    updateHPBar("hp-you", pHP, getStats(starterName).hp);
   }
+
   function animateHit() {
     const el = document.getElementById("wild-img");
     if (el) {
