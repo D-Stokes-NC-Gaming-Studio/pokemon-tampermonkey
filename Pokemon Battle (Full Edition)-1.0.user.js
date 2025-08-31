@@ -11,6 +11,7 @@
 // @grant       unsafeWindow
 // @grant       GM_getValue
 // @grant       GM_setValue
+// @grant       GM_xmlhttpRequest
 // @connect      github.com
 // @connect      raw.githubusercontent.com
 // ==/UserScript==
@@ -63,79 +64,75 @@ GM.xmlHttpRequest({
     typeof GM_info !== "undefined" && GM_info.script && GM_info.script.version
       ? GM_info.script.version
       : "0.0.0";
-  // ====== UPDATE CHECK ======
-  function compareVersions(a, b) {
-    // returns 1 if a>b, 0 if equal, -1 if a<b
-    if (!a && !b) return 0;
-    if (!a) return -1;
-    if (!b) return 1;
-
-    // split by dot and hyphen to roughly handle 1.2.3-beta
-    const pa = String(a).trim().split(/[.\-]/);
-    const pb = String(b).trim().split(/[.\-]/);
-    const len = Math.max(pa.length, pb.length);
-
-    for (let i = 0; i < len; i++) {
-      const xa = pa[i] ?? "0";
-      const xb = pb[i] ?? "0";
-
-      const na = Number(xa);
-      const nb = Number(xb);
-
-      const aIsNum = !Number.isNaN(na);
-      const bIsNum = !Number.isNaN(nb);
-
-      if (aIsNum && bIsNum) {
-        if (na > nb) return 1;
-        if (na < nb) return -1;
-      } else {
-        // fall back to string compare for non-numeric segments (e.g., beta)
-        if (xa > xb) return 1;
-        if (xa < xb) return -1;
-      }
-    }
-    return 0;
-  }
-
-  function fetchRemoteVersion(url) {
-    return new Promise((resolve) => {
-      GM_xmlhttpRequest({
-        method: "GET",
-        url:
-          encodeURI(url) +
-          ((url.includes("?") ? "&" : "?") + "_ts=" + Date.now()), // bust cache
-        headers: { "Cache-Control": "no-cache", Pragma: "no-cache" },
-        responseType: "text",
-        onload: (res) => {
-          if (res.status >= 200 && res.status < 300 && res.responseText) {
-            // Find @version from the userscript header
-            const m = res.responseText.match(/@version\s+([^\s]+)/i);
-            resolve(m ? m[1].trim() : null);
-          } else {
-            resolve(null);
-          }
-        },
-        onerror: () => resolve(null),
-        ontimeout: () => resolve(null),
-      });
-    });
-  }
-
-  /**
-   * Checks if there is an update available for this userscript.
-   * @returns {Promise<boolean>}  true if remote version > CURRENT_VERSION
-   */
-  async function tampermonkeyNeedsUpdate() {
-    try {
-      const remoteVersion = await fetchRemoteVersion(DOWNLOAD_URL);
-      console.log("RemoteVersion: " + remoteVersion);
+    const rVersion = fetchRemoteVersion(DOWNLOAD_URL);
+      console.log("RemoteVersion: " + rVersion);
       console.log("CURRENTVERSION: " + CURRENT_VERSION);
-      if (!remoteVersion) return false; // couldn't fetch or parse
-      return compareVersions(remoteVersion, CURRENT_VERSION) > 0;
-    } catch {
-      return false;
-    }
+  // ====== UPDATE CHECK ======
+  // ====== VERSION COMPARISON (hardened) ======
+function normalizeVersion(v, length = 4) {
+  // "v1.2.3" -> [1,2,3,0]
+  // "1.2.3-beta.1" -> [1,2,3,1]
+  // "1.0.0.0" -> [1,0,0,0]
+  // "1.2" -> [1,2,0,0]
+  if (!v) return Array.from({ length }, () => 0);
+  v = String(v).trim().replace(/^v/i, ""); // strip leading 'v'
+  const parts = v.split(/[.\-]/).map(seg => {
+    const m = String(seg).match(/^\d+/); // take leading digits only
+    return m ? parseInt(m[0], 10) : 0;
+  });
+  while (parts.length < length) parts.push(0);
+  if (parts.length > length) parts.length = length;
+  return parts;
+}
+
+// returns 1 if a>b, 0 if equal, -1 if a<b
+function compareVersions(a, b) {
+  const A = normalizeVersion(a, 4);
+  const B = normalizeVersion(b, 4);
+  for (let i = 0; i < A.length; i++) {
+    if (A[i] > B[i]) return 1;
+    if (A[i] < B[i]) return -1;
   }
+  return 0;
+}
+
+// ====== FETCH REMOTE VERSION ======
+function fetchRemoteVersion(url) {
+  return new Promise((resolve) => {
+    GM_xmlhttpRequest({
+      method: "GET",
+      url: url, // bust cache
+      headers: { "Cache-Control": "no-cache", Pragma: "no-cache" },
+      responseType: "text",
+      onload: (res) => {
+        if (res.status >= 200 && res.status < 300 && res.responseText) {
+          const m = res.responseText.match(/@version\s+([^\s]+)/i);
+          resolve(m ? m[1].trim() : null);
+        } else {
+          resolve(null);
+        }
+      },
+      onerror: () => resolve(null),
+      ontimeout: () => resolve(null),
+    });
+  });
+}
+
+/**
+ * Checks if there is an update available for this userscript.
+ * @returns {Promise<boolean>} true if remote version > CURRENT_VERSION
+ */
+async function tampermonkeyNeedsUpdate() {
+  try {
+    const remoteVersion = await fetchRemoteVersion(DOWNLOAD_URL);
+    if (!remoteVersion) return false;
+    // Debug (optional)
+    // console.log('remote:', remoteVersion, 'local:', CURRENT_VERSION, 'cmp:', compareVersions(remoteVersion, CURRENT_VERSION));
+    return compareVersions(remoteVersion, CURRENT_VERSION) > 0;
+  } catch {
+    return false;
+  }
+}
 
   // Check if current URL matches any blocklist rule
   if (BLOCKLIST.some((rx) => rx.test(location.href))) return;
@@ -1243,107 +1240,133 @@ GM.xmlHttpRequest({
 
     renderSettings();
   }
-  function renderSettings() {
-    if (!settingsPanel) return;
-    settingsPanel.innerHTML = "<strong>Settings</strong><br><br>";
+async function renderSettings() {
+  if (!settingsPanel) return;
+  settingsPanel.innerHTML = "<strong>Settings</strong><br><br>";
 
-    // Sound On/Off Toggle
-    const soundToggle = createButton(
-      `Sound: ${getBool(STORAGE.soundOn) ? "On" : "Off"}`,
-      () => {
-        const current = getBool(STORAGE.soundOn);
-        const newVal = !current;
-        setBool(STORAGE.soundOn, newVal);
+  // Sound On/Off Toggle
+  const soundToggle = createButton(
+    `Sound: ${getBool(STORAGE.soundOn) ? "On" : "Off"}`,
+    () => {
+      const current = getBool(STORAGE.soundOn);
+      const newVal = !current;
+      setBool(STORAGE.soundOn, newVal);
 
-        if (!newVal) {
-          // Stop and reset all currently playing sounds
-          Object.values(SOUNDS).forEach((audio) => {
-            if (audio instanceof Audio) {
-              audio.pause();
-              audio.currentTime = 0;
-            }
-          });
-        }
+      if (!newVal) {
+        Object.values(SOUNDS).forEach((audio) => {
+          if (audio instanceof Audio) {
+            audio.pause();
+            audio.currentTime = 0;
+          }
+        });
+      }
 
-        renderSettings();
-      },
-      "btn btn-info"
-    );
+      renderSettings();
+    },
+    "btn btn-info"
+  );
 
-    // Volume Slider
-    const volumeSlider = document.createElement("input");
-    volumeSlider.type = "range";
-    volumeSlider.min = 0;
-    volumeSlider.max = 1;
-    volumeSlider.step = 0.01;
-    volumeSlider.value = getStr(STORAGE.volume, "0.4");
-    volumeSlider.style.width = "100%";
-    volumeSlider.oninput = () => {
-      const vol = parseFloat(volumeSlider.value);
-      setStr(STORAGE.volume, volumeSlider.value);
-      Object.values(SOUNDS).forEach((a) => {
-        if (a instanceof Audio) a.volume = vol;
-      });
-    };
+  // Volume Slider
+  const volumeSlider = document.createElement("input");
+  volumeSlider.type = "range";
+  volumeSlider.min = 0;
+  volumeSlider.max = 1;
+  volumeSlider.step = 0.01;
+  volumeSlider.value = getStr(STORAGE.volume, "0.4");
+  volumeSlider.style.width = "100%";
+  volumeSlider.oninput = () => {
+    const vol = parseFloat(volumeSlider.value);
+    setStr(STORAGE.volume, volumeSlider.value);
+    Object.values(SOUNDS).forEach((a) => {
+      if (a instanceof Audio) a.volume = vol;
+    });
+  };
 
-    // Change Starter
-    const starterBtn = createButton(
-      "🔄 Change Starter",
-      openStarter,
-      "btn btn-success"
-    );
+  // Change Starter
+  const starterBtn = createButton(
+    "🔄 Change Starter",
+    openStarter,
+    "btn btn-success"
+  );
 
-    // Random Battle Toggle
-    const randomBattleToggle = createButton(
-      `Random Battles: ${randomBattleEnabled ? "On" : "Off"}`,
-      toggleRandomBattles,
-      "btn btn-success"
-    );
+  // Random Battle Toggle
+  const randomBattleToggle = createButton(
+    `Random Battles: ${randomBattleEnabled ? "On" : "Off"}`,
+    toggleRandomBattles,
+    "btn btn-success"
+  );
 
-    // Update Pokedex and data from old version //
-    const pokedexBtn = createButton(
-      "Upgrade Pokédex",
-      upgradeOldPokedexEntries,
-      "btn btn-warning mt-2"
-    );
-    // 🔴 Reset Game Button
-    const resetBtn = createButton(
-      "🗑️ Reset Game",
-      resetGameData,
-      "btn btn-warning"
-    );
-    resetBtn.style.color = "black";
-    resetBtn.style.marginTop = "12px";
+  // Update Pokedex and data from old version //
+  const pokedexBtn = createButton(
+    "Upgrade Pokédex",
+    upgradeOldPokedexEntries,
+    "btn btn-warning mt-2"
+  );
 
-    // Close Button
-    const closeBtn = createButton(
-      "❌ Close",
-      () => {
-        document.body.removeChild(settingsPanel);
-        settingsPanel = null;
-      },
-      "btn btn-success"
-    );
-    settingsPanel.append(
-      soundToggle,
-      document.createElement("br"),
-      volumeSlider,
-      document.createElement("br"),
-      document.createElement("br"),
-      starterBtn,
-      document.createElement("br"),
-      document.createElement("br"),
-      randomBattleToggle,
-      document.createElement("br"),
-      document.createElement("br"),
-      resetBtn,
-      document.createElement("br"),
-      document.createElement("br"),
-      pokedexBtn,
-      document.createElement("br"),
-      closeBtn
-    );
+  // Reset Game Button
+  const resetBtn = createButton(
+    "🗑️ Reset Game",
+    resetGameData,
+    "btn btn-warning"
+  );
+  resetBtn.style.color = "black";
+  resetBtn.style.marginTop = "12px";
+
+  // Update Button (only if update available)
+  let updateBtn = null;
+  try {
+    const hasUpdate = await tampermonkeyNeedsUpdate();
+    if (hasUpdate) {
+      updateBtn = createButton(
+        "⬆️ Update Available",
+        () => {
+          window.open(DOWNLOAD_URL, "_blank");
+        },
+        "btn btn-danger"
+      );
+      updateBtn.style.marginTop = "12px";
+    }
+  } catch (e) {
+    console.error("Update check failed", e);
   }
+
+  // Close Button
+  const closeBtn = createButton(
+    "❌ Close",
+    () => {
+      document.body.removeChild(settingsPanel);
+      settingsPanel = null;
+    },
+    "btn btn-success"
+  );
+
+  // Append everything
+  settingsPanel.append(
+    soundToggle,
+    document.createElement("br"),
+    volumeSlider,
+    document.createElement("br"),
+    document.createElement("br"),
+    starterBtn,
+    document.createElement("br"),
+    document.createElement("br"),
+    randomBattleToggle,
+    document.createElement("br"),
+    document.createElement("br"),
+    resetBtn,
+    document.createElement("br"),
+    document.createElement("br"),
+    pokedexBtn,
+    document.createElement("br")
+  );
+
+  if (updateBtn) {
+    settingsPanel.append(updateBtn, document.createElement("br"));
+  }
+
+  settingsPanel.append(closeBtn);
+}
+
   function renderFilteredList(names, container, searchEl) {
     const filter = searchEl.value.toLowerCase();
     container.innerHTML = "";
