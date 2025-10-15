@@ -676,6 +676,7 @@ GM.xmlHttpRequest({
   if (!GM_getValue(STORAGE.stats)) setObj(STORAGE.stats, { hp: 100, atk: 15 });
 
   const XP_TO_LEVEL = (lvl) => 50 + lvl * 25;
+  const MAX_LEVEL = 100;
 
   // --- Sounds ---
   const SOUNDS = {
@@ -1799,6 +1800,10 @@ button .badge.bg-danger {
   // === Evolution & XP ===
   function gainXP(amount) {
     const stats = getStats(starterName);
+    if(stats == null) return;
+    if (stats.level > MAX_LEVEL) stats.level = MAX_LEVEL;
+    if(stats.level >= MAX_LEVEL) return; // No XP gain at max level
+
     stats.xp += amount;
     let leveledUp = false;
 
