@@ -227,8 +227,6 @@ GM.xmlHttpRequest({
   const updater = new CheckUpdate(cfg);
   updater.check(); // runs full check
 
-
-
   // --- Blocklist: Add domains or paths you want to skip ---
   const BLOCKLIST = [
     /:\/\/www\.facebook\.com\/adsmanager\//, // Example: Facebook ads manager
@@ -251,89 +249,89 @@ GM.xmlHttpRequest({
   ];
   //#region Update check (optional, uncomment to enable)
   /*
-  // ====== CONFIG ======
-  const DOWNLOAD_URL =
-    "https://raw.githubusercontent.com/D-Stokes-NC-Gaming-Studio/pokemon-tampermonkey/refs/heads/main/Pokemon%20Battle%20(Full%20Edition)-1.0.user.js";
-  // If you prefer the link you pasted, it redirects from github.com -> raw.githubusercontent.com.
-  // Using raw directly avoids extra hops.
-  
+// ====== CONFIG ======
+const DOWNLOAD_URL =
+  "https://raw.githubusercontent.com/D-Stokes-NC-Gaming-Studio/pokemon-tampermonkey/refs/heads/main/Pokemon%20Battle%20(Full%20Edition)-1.0.user.js";
+// If you prefer the link you pasted, it redirects from github.com -> raw.githubusercontent.com.
+// Using raw directly avoids extra hops.
 
-  const CURRENT_VERSION =
-    typeof GM_info !== "undefined" && GM_info.script && GM_info.script.version
-      ? GM_info.script.version
-      : "0.0.0";
-  const rVersion = fetchRemoteVersion(DOWNLOAD_URL);
-  console.log("RemoteVersion: " + rVersion);
-  console.log("CURRENTVERSION: " + CURRENT_VERSION);
-  // ====== UPDATE CHECK ======
-  // ====== VERSION COMPARISON (hardened) ======
-  function normalizeVersion(v, length = 4) {
-    // "v1.2.3" -> [1,2,3,0]
-    // "1.2.3-beta.1" -> [1,2,3,1]
-    // "1.0.0.0" -> [1,0,0,0]
-    // "1.2" -> [1,2,0,0]
-    if (!v) return Array.from({ length }, () => 0);
-    v = String(v).trim().replace(/^v/i, ""); // strip leading 'v'
-    const parts = v.split(/[.\-]/).map((seg) => {
-      const m = String(seg).match(/^\d+/); // take leading digits only
-      return m ? parseInt(m[0], 10) : 0;
+
+const CURRENT_VERSION =
+  typeof GM_info !== "undefined" && GM_info.script && GM_info.script.version
+    ? GM_info.script.version
+    : "0.0.0";
+const rVersion = fetchRemoteVersion(DOWNLOAD_URL);
+console.log("RemoteVersion: " + rVersion);
+console.log("CURRENTVERSION: " + CURRENT_VERSION);
+// ====== UPDATE CHECK ======
+// ====== VERSION COMPARISON (hardened) ======
+function normalizeVersion(v, length = 4) {
+  // "v1.2.3" -> [1,2,3,0]
+  // "1.2.3-beta.1" -> [1,2,3,1]
+  // "1.0.0.0" -> [1,0,0,0]
+  // "1.2" -> [1,2,0,0]
+  if (!v) return Array.from({ length }, () => 0);
+  v = String(v).trim().replace(/^v/i, ""); // strip leading 'v'
+  const parts = v.split(/[.\-]/).map((seg) => {
+    const m = String(seg).match(/^\d+/); // take leading digits only
+    return m ? parseInt(m[0], 10) : 0;
+  });
+  while (parts.length < length) parts.push(0);
+  if (parts.length > length) parts.length = length;
+  return parts;
+}
+
+// returns 1 if a>b, 0 if equal, -1 if a<b
+function compareVersions(a, b) {
+  const A = normalizeVersion(a, 4);
+  const B = normalizeVersion(b, 4);
+  for (let i = 0; i < A.length; i++) {
+    if (A[i] > B[i]) return 1;
+    if (A[i] < B[i]) return -1;
+  }
+  return 0;
+}
+
+// ====== FETCH REMOTE VERSION ======
+function fetchRemoteVersion(url) {
+  return new Promise((resolve) => {
+    GM_xmlhttpRequest({
+      method: "GET",
+      url: url, // bust cache
+      headers: { "Cache-Control": "no-cache", Pragma: "no-cache" },
+      responseType: "text",
+      onload: (res) => {
+        if (res.status >= 200 && res.status < 300 && res.responseText) {
+          const m = res.responseText.match(/@version\s+([^\s]+)/i);
+          resolve(m ? m[1].trim() : null);
+        } else {
+          resolve(null);
+        }
+      },
+      onerror: () => resolve(null),
+      ontimeout: () => resolve(null),
     });
-    while (parts.length < length) parts.push(0);
-    if (parts.length > length) parts.length = length;
-    return parts;
-  }
-
-  // returns 1 if a>b, 0 if equal, -1 if a<b
-  function compareVersions(a, b) {
-    const A = normalizeVersion(a, 4);
-    const B = normalizeVersion(b, 4);
-    for (let i = 0; i < A.length; i++) {
-      if (A[i] > B[i]) return 1;
-      if (A[i] < B[i]) return -1;
-    }
-    return 0;
-  }
-
-  // ====== FETCH REMOTE VERSION ======
-  function fetchRemoteVersion(url) {
-    return new Promise((resolve) => {
-      GM_xmlhttpRequest({
-        method: "GET",
-        url: url, // bust cache
-        headers: { "Cache-Control": "no-cache", Pragma: "no-cache" },
-        responseType: "text",
-        onload: (res) => {
-          if (res.status >= 200 && res.status < 300 && res.responseText) {
-            const m = res.responseText.match(/@version\s+([^\s]+)/i);
-            resolve(m ? m[1].trim() : null);
-          } else {
-            resolve(null);
-          }
-        },
-        onerror: () => resolve(null),
-        ontimeout: () => resolve(null),
-      });
-    });
-  }
+  });
+}
 */
 
 
   /**
-     * Checks if there is an update available for this userscript.
-     * @returns {Promise<boolean>} true if remote version > CURRENT_VERSION
-     
-    async function tampermonkeyNeedsUpdate() {
-      try {
-        const remoteVersion = await fetchRemoteVersion(DOWNLOAD_URL);
-        if (!remoteVersion) return false;
-        // Debug (optional)
-        // console.log('remote:', remoteVersion, 'local:', CURRENT_VERSION, 'cmp:', compareVersions(remoteVersion, CURRENT_VERSION));
-        return compareVersions(remoteVersion, CURRENT_VERSION) > 0;
-      } catch {
-        return false;
-      }
-    }
-    */
+ * Checks if there is an update available for this userscript.
+ * @returns {Promise<boolean>} true if remote version > CURRENT_VERSION
+
+async function tampermonkeyNeedsUpdate() {
+  try {
+    const remoteVersion = await fetchRemoteVersion(DOWNLOAD_URL);
+    if (!remoteVersion) return false;
+    // Debug (optional)
+    // console.log('remote:', remoteVersion, 'local:', CURRENT_VERSION, 'cmp:', compareVersions(remoteVersion, CURRENT_VERSION));
+    return compareVersions(remoteVersion, CURRENT_VERSION) > 0;
+  } catch {
+    return false;
+  }
+}
+*/
   //#endregion
 
   // Check if current URL matches any blocklist rule
@@ -1485,11 +1483,7 @@ GM.xmlHttpRequest({
     };
 
     // Change Starter
-    const starterBtn = createButton(
-      "🔄 Change Starter",
-      openStarter,
-      "btn btn-success"
-    );
+    const starterBtn = createButton("🔄 Change Starter", openStarter, "btn btn-success");
 
     // Random Battle Toggle
     const randomBattleToggle = createButton(
@@ -1498,39 +1492,18 @@ GM.xmlHttpRequest({
       "btn btn-success"
     );
 
-    // Update Pokedex and data from old version //
-    const pokedexBtn = createButton(
-      "Upgrade Pokédex",
-      upgradeOldPokedexEntries,
-      "btn btn-warning mt-2"
-    );
+    // Upgrade Pokédex
+    const pokedexBtn = createButton("Upgrade Pokédex", upgradeOldPokedexEntries, "btn btn-warning mt-2");
 
-    // Reset Game Button
-    const resetBtn = createButton(
-      "🗑️ Reset Game",
-      resetGameData,
-      "btn btn-warning"
-    );
+    // Reset Game
+    const resetBtn = createButton("🗑️ Reset Game", resetGameData, "btn btn-warning");
     resetBtn.style.color = "black";
     resetBtn.style.marginTop = "12px";
 
-    // Update Button (only if update available)
-    let updateBtn = null;
-    try {
-      const hasUpdate = await updater.needsUpdate();
-      if (hasUpdate) {
-        updateBtn = createButton(
-          "⬆️ Update Available",
-          () => {
-            window.open(this.DOWNLOAD_URL, "_blank");
-          },
-          "btn btn-danger"
-        );
-        updateBtn.style.marginTop = "12px";
-      }
-    } catch (e) {
-      console.error("Update check failed", e);
-    }
+    // Container for update UI
+    const updateContainer = document.createElement("div");
+    updateContainer.style.marginTop = "12px";
+    updateContainer.textContent = "Checking for updates…";
 
     // Close Button
     const closeBtn = createButton(
@@ -1542,31 +1515,39 @@ GM.xmlHttpRequest({
       "btn btn-success"
     );
 
-    // Append everything
+    // Append the static controls first
     settingsPanel.append(
-      soundToggle,
+      soundToggle, document.createElement("br"),
+      volumeSlider, document.createElement("br"), document.createElement("br"),
+      starterBtn, document.createElement("br"), document.createElement("br"),
+      randomBattleToggle, document.createElement("br"), document.createElement("br"),
+      resetBtn, document.createElement("br"), document.createElement("br"),
+      pokedexBtn, document.createElement("br"),
+      updateContainer, // <- placeholder for async update button
       document.createElement("br"),
-      volumeSlider,
-      document.createElement("br"),
-      document.createElement("br"),
-      starterBtn,
-      document.createElement("br"),
-      document.createElement("br"),
-      randomBattleToggle,
-      document.createElement("br"),
-      document.createElement("br"),
-      resetBtn,
-      document.createElement("br"),
-      document.createElement("br"),
-      pokedexBtn,
-      document.createElement("br")
+      closeBtn
     );
 
-    if (updateBtn) {
-      settingsPanel.append(updateBtn, document.createElement("br"));
-    }
+    // ✅ Now do the async check and update the placeholder
+    try {
+      const hasUpdate = await updater.needsUpdate();
+      if (hasUpdate) {
+        const remote = await updater.fetchRemoteVersion(cfg.DOWNLOAD_URL);
+        const updateBtn = createButton(
+          "⬆️ Update Available",
+          () => window.open(updater.configs.DOWNLOAD_URL, "_blank"),
+          "btn btn-danger w-100"
+        );
+        updateBtn.title = `Current: ${cfg.CURRENT_VERSION} → Remote: ${remote || "?"}`;
+        updateContainer.replaceChildren(updateBtn);
 
-    settingsPanel.append(closeBtn);
+      } else {
+        updateContainer.textContent = `✅ Up to date (v${cfg.CURRENT_VERSION})`;
+      }
+    } catch (e) {
+      updateContainer.textContent = "⚠️ Update check failed.";
+      console.warn(e);
+    }
   }
 
   function renderFilteredList(names, container, searchEl) {
