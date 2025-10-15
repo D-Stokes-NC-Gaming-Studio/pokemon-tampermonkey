@@ -4,7 +4,7 @@
 // @connect     pokeapi.co
 // @connect     https://dstokesncstudio.com/pokeapi/pokeapi.php
 // @namespace   dstokesncstudio.com
-// @version     3.0.0.0
+// @version     3.0.0.1
 // @description Full version with XP, evolution, stats, sound, shop, battles, and walking partner — persistent across sites.
 // @include     *
 // @grant       GM.xmlHttpRequest
@@ -32,8 +32,188 @@ GM.xmlHttpRequest({
 // form images https://raw.githubusercontent.com/HybridShivam/Pokemon/refs/heads/master/assets/imagesHQ/003-Gmax.png
 // https://raw.githubusercontent.com/HybridShivam/Pokemon/refs/heads/master/assets/images/003-Gmax.png
 */
+
 (function () {
   "use strict";
+  // 🔥 --- Custom Pokemon Logger (paste the whole code here) ---
+  (function attachPokemonLogger(global = window) {
+    const LEVELS = ["debug", "log", "info", "warn", "error"];
+    const DEFAULT_COLOR = "#ff4b2b";
+
+    function fmtNow() {
+      const d = new Date();
+      return d.toLocaleTimeString(undefined, { hour12: false }) + "." + String(d.getMilliseconds()).padStart(3, "0");
+    }
+
+    function makePrinter(scope, color = DEFAULT_COLOR, enabled = true, minLevel = "debug") {
+      const minIdx = Math.max(0, LEVELS.indexOf(minLevel));
+
+      function style(labelColor) {
+        return [
+          `%c${fmtNow()} %c${scope}%c`,
+          "opacity:.7",
+          `background:${labelColor}; color:#fff; padding:2px 6px; border-radius:6px; font-weight:700`,
+          "color:inherit"
+        ];
+      }
+
+      const api = {
+        scope,
+        enabled,
+        color,
+        level: minLevel,
+        setEnabled(v) { api.enabled = !!v; return api; },
+        setLevel(lvl) { api.level = lvl; return api; },
+        setColor(c) { api.color = c; return api; },
+
+        child(subScope, subColor) {
+          return makePrinter(`${scope}.${subScope}`, subColor || color, api.enabled, api.level);
+        },
+
+        _buffer: [],
+        get history() { return api._buffer.slice(); },
+        clearHistory() { api._buffer.length = 0; },
+
+        debug(...args) { return _print("debug", args); },
+        log(...args) { return _print("log", args); },
+        info(...args) { return _print("info", args); },
+        warn(...args) { return _print("warn", args); },
+        error(...args) { return _print("error", args); },
+        success(...args) { return _print("log", args, "#2e7d32"); }
+      };
+
+      function _print(level, args, forceColor) {
+        if (!api.enabled) return api;
+        const idx = LEVELS.indexOf(level);
+        if (idx < LEVELS.indexOf(api.level)) return api;
+
+        const col = forceColor || api.color;
+        const head = style(col);
+        const fn = console[level] || console.log;
+        api._buffer.push({ t: Date.now(), scope, level, args });
+        try {
+          fn.apply(console, head.concat(args));
+        } catch {
+          console.log(`[${scope}]`, ...args);
+        }
+        return api;
+      }
+
+      return api;
+    }
+
+    const pokemon = makePrinter("pokemon", DEFAULT_COLOR);
+    pokemon.configs = pokemon.child("configs", "#00bcd4");
+    pokemon.net = pokemon.child("net", "#9c27b0");
+    pokemon.ui = pokemon.child("ui", "#ff9800");
+
+    Object.defineProperty(global, "pokemon", { value: pokemon, writable: false });
+  })(typeof unsafeWindow !== "undefined" ? unsafeWindow : window);
+
+  pokemon.log("Pokemon script started ✅");
+  // --- Configs class (example usage) ---
+  class Configs {
+    constructor(
+      url = "https://raw.githubusercontent.com/D-Stokes-NC-Gaming-Studio/pokemon-tampermonkey/main/Pokemon%20Battle%20(Full%20Edition)-1.0.user.js",
+      currentVersion = (typeof GM_info !== "undefined" && GM_info?.script?.version)
+        ? GM_info.script.version
+        : "0.0.0",
+
+    ) {
+      this.DOWNLOAD_URL = url;
+      this.CURRENT_VERSION = currentVersion;
+      this._updateChecking = false;
+      pokemon.configs.info("Loading configs...");
+
+
+    }
+    logInfo() {
+      pokemon.configs.info("Config ready:", "Starting to check for updates...");
+      this.checkUpdates(); // ✅ kick off update check here
+    }
+    checkUpdates() {
+      if (this._updateChecking) return;
+      this._updateChecking = true;
+      new CheckUpdate(this); // constructor runs the check
+    }
+
+  }
+  class CheckUpdate {
+    async check() {
+      const remoteVersion = await this.fetchRemoteVersion(this.configs.DOWNLOAD_URL);
+      pokemon.configs.info("Remote Version:", remoteVersion || "Unknown");
+      pokemon.configs.info("Current Version:", this.configs.CURRENT_VERSION);
+
+      if (!remoteVersion) {
+        pokemon.configs.warn("⚠️ Could not fetch remote version.");
+        return;
+      }
+
+      const cmp = this.compareVersions(remoteVersion, this.configs.CURRENT_VERSION);
+      if (cmp > 0) {
+        pokemon.configs.warn("⚠️ Update available:", remoteVersion);
+        this.promptUpdate(remoteVersion);
+      } else if (cmp === 0) {
+        pokemon.configs.success("✅ Up to date!");
+      } else {
+        pokemon.configs.log("📦 Local version is newer (dev build).");
+      }
+    }
+
+    promptUpdate(remoteVersion) {
+      if (confirm(`⚡ New version available (${remoteVersion}). Open download page?`)) {
+        window.open(this.configs.DOWNLOAD_URL, "_blank");
+      }
+    }
+
+    async fetchRemoteVersion(url) {
+      return new Promise((resolve) => {
+        GM_xmlhttpRequest({
+          method: "GET",
+          url: url + "?_=" + Date.now(),
+          headers: { "Cache-Control": "no-cache", Pragma: "no-cache" },
+          responseType: "text",
+          onload: (res) => {
+            if (res.status >= 200 && res.status < 300 && res.responseText) {
+              const m = res.responseText.match(/@version\s+([^\s]+)/i);
+              resolve(m ? m[1].trim() : null);
+            } else {
+              resolve(null);
+            }
+          },
+          onerror: () => resolve(null),
+          ontimeout: () => resolve(null),
+        });
+      });
+    }
+
+    normalizeVersion(v, length = 4) {
+      if (!v) return Array.from({ length }, () => 0);
+      v = String(v).trim().replace(/^v/i, "");
+      const parts = v.split(/[.\-]/).map(seg => {
+        const m = String(seg).match(/^\d+/);
+        return m ? parseInt(m[0], 10) : 0;
+      });
+      while (parts.length < length) parts.push(0);
+      if (parts.length > length) parts.length = length;
+      return parts;
+    }
+
+    compareVersions(a, b) {
+      const A = this.normalizeVersion(a);
+      const B = this.normalizeVersion(b);
+      for (let i = 0; i < A.length; i++) {
+        if (A[i] > B[i]) return 1;
+        if (A[i] < B[i]) return -1;
+      }
+      return 0;
+    }
+  }
+
+  // Example:
+  const cfg = new Configs();
+
+
 
   // --- Blocklist: Add domains or paths you want to skip ---
   const BLOCKLIST = [
@@ -55,11 +235,15 @@ GM.xmlHttpRequest({
     /// DoubleClick ad domains
     // Add more patterns as needed
   ];
+  //#region Update check (optional, uncomment to enable)
+  /*
   // ====== CONFIG ======
   const DOWNLOAD_URL =
     "https://raw.githubusercontent.com/D-Stokes-NC-Gaming-Studio/pokemon-tampermonkey/refs/heads/main/Pokemon%20Battle%20(Full%20Edition)-1.0.user.js";
   // If you prefer the link you pasted, it redirects from github.com -> raw.githubusercontent.com.
   // Using raw directly avoids extra hops.
+  
+
   const CURRENT_VERSION =
     typeof GM_info !== "undefined" && GM_info.script && GM_info.script.version
       ? GM_info.script.version
@@ -117,11 +301,13 @@ GM.xmlHttpRequest({
       });
     });
   }
+*/
 
-  /**
+  
+/**
    * Checks if there is an update available for this userscript.
    * @returns {Promise<boolean>} true if remote version > CURRENT_VERSION
-   */
+   
   async function tampermonkeyNeedsUpdate() {
     try {
       const remoteVersion = await fetchRemoteVersion(DOWNLOAD_URL);
@@ -133,8 +319,10 @@ GM.xmlHttpRequest({
       return false;
     }
   }
-
-  // Check if current URL matches any blocklist rule
+  */
+//#endregion
+  
+// Check if current URL matches any blocklist rule
   if (BLOCKLIST.some((rx) => rx.test(location.href))) return;
 
   // In addition to the above blocklist:
@@ -155,6 +343,7 @@ GM.xmlHttpRequest({
     )
       return;
   }
+
   // --- Storage and helpers ---
   const STORAGE = {
     coins: "pkm_coins",
@@ -293,7 +482,7 @@ GM.xmlHttpRequest({
         }
         setObj(STORAGE.party, objParty);
       }
-    } catch {}
+    } catch { }
   }
   if (!GM_getValue(STORAGE.soundOn)) setBool(STORAGE.soundOn, true);
   if (!GM_getValue(STORAGE.xp)) setInt(STORAGE.xp, 0);
@@ -495,7 +684,7 @@ GM.xmlHttpRequest({
         el.style.bottom = "";
         el.style.top = y + "px";
         el.style.position = "fixed";
-      } catch {}
+      } catch { }
     }
 
     // Ensure a persistent BODY container for content that renderHeader() will manage
@@ -619,9 +808,8 @@ GM.xmlHttpRequest({
     const partnerDiv = document.createElement("div");
     partnerDiv.id = "pkm-partner";
     partnerDiv.textContent = stored
-      ? `Partner: ${
-          stored[0].toUpperCase() + stored.slice(1)
-        } (Lv ${lvl}) | ATK: ${stats.atk}`
+      ? `Partner: ${stored[0].toUpperCase() + stored.slice(1)
+      } (Lv ${lvl}) | ATK: ${stats.atk}`
       : "Choose your starter!";
     topRow.appendChild(partnerDiv);
 
@@ -1508,8 +1696,7 @@ button .badge.bg-danger {
                 fetchPartner(nextName);
                 setStats(nextName, { ...oldStats });
                 alert(
-                  `✨ Your Pokémon evolved into ${
-                    nextName[0].toUpperCase() + nextName.slice(1)
+                  `✨ Your Pokémon evolved into ${nextName[0].toUpperCase() + nextName.slice(1)
                   }!`
                 );
               }
@@ -1667,27 +1854,27 @@ button .badge.bg-danger {
   }
 
   let battlePanel, wild, pHP, wHP, wMaxHP;
-function openBattle() {
-  if (battlePanel) return;
-  battlePanel = document.createElement("div");
-  Object.assign(battlePanel.style, {
-    position: "fixed",
-    top: "50%",
-    left: "50%",
-    transform: "translate(-50%,-50%)",
-    color: "#fff",
-    padding: "0px",
-    zIndex: "10000",
-    width: "310px",               // a bit wider for the grid
-    maxWidth: "92vw"
-  });
-  document.body.appendChild(battlePanel);
+  function openBattle() {
+    if (battlePanel) return;
+    battlePanel = document.createElement("div");
+    Object.assign(battlePanel.style, {
+      position: "fixed",
+      top: "50%",
+      left: "50%",
+      transform: "translate(-50%,-50%)",
+      color: "#fff",
+      padding: "0px",
+      zIndex: "10000",
+      width: "310px",               // a bit wider for the grid
+      maxWidth: "92vw"
+    });
+    document.body.appendChild(battlePanel);
 
-  if (getBool(STORAGE.soundOn)) {
-    try { SOUNDS.battleSound.play(); } catch {}
+    if (getBool(STORAGE.soundOn)) {
+      try { SOUNDS.battleSound.play(); } catch { }
+    }
+    startBattle(); // this should call drawBattle() initially
   }
-  startBattle(); // this should call drawBattle() initially
-}
 
   function startBattle() {
     const id = Math.floor(Math.random() * 649) + 1;
@@ -1861,8 +2048,8 @@ function openBattle() {
             1,
             Math.floor(
               getStats(starterName).atk *
-                0.6 *
-                (getStats(starterName).atkBuff || 1)
+              0.6 *
+              (getStats(starterName).atkBuff || 1)
             )
           );
           wHP = Math.max(0, wHP - dmg);
@@ -1879,8 +2066,8 @@ function openBattle() {
             1,
             Math.floor(
               getStats(starterName).atk *
-                0.7 *
-                (getStats(starterName).atkBuff || 1)
+              0.7 *
+              (getStats(starterName).atkBuff || 1)
             )
           );
           wHP = Math.max(0, wHP - dmg);
@@ -2360,9 +2547,8 @@ function openBattle() {
           rawName = SPRITE_NAME_FIXES[rawName];
         }
 
-        img.src = `https://play.pokemonshowdown.com/sprites/${
-          isShiny ? "ani-shiny" : "ani"
-        }/${rawName}.gif`;
+        img.src = `https://play.pokemonshowdown.com/sprites/${isShiny ? "ani-shiny" : "ani"
+          }/${rawName}.gif`;
 
         img.style.width = "40px";
 
@@ -2498,7 +2684,7 @@ function openBattle() {
     storageKeys.forEach((k) => {
       try {
         bundle[k] = GM_getValue(k);
-      } catch {}
+      } catch { }
     });
     const blob = new Blob([JSON.stringify(bundle, null, 2)], {
       type: "application/json",
@@ -2555,8 +2741,7 @@ function openBattle() {
     )
       .map(
         (l) =>
-          `[${l.t}] ${l.type || "info"}: ${l.msg}${
-            l.stack ? "\n" + l.stack : ""
+          `[${l.t}] ${l.type || "info"}: ${l.msg}${l.stack ? "\n" + l.stack : ""
           }`
       )
       .join("\n\n");
