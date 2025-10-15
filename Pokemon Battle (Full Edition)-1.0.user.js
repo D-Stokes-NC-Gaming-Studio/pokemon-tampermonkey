@@ -122,8 +122,181 @@ GM.xmlHttpRequest({
       this.DOWNLOAD_URL = url;
       this.CURRENT_VERSION = currentVersion;
       this._updateChecking = false;
+      this.STORAGE = {
+        coins: "pkm_coins",
+        balls: "pkm_balls",
+        greatBalls: "pkm_great_balls",
+        ultraBalls: "pkm_ultra_balls",
+        potions: "pkm_potions",
+        party: "pkm_party",
+        starter: "pkm_starter",
+        xp: "pkm_xp",
+        level: "pkm_level",
+        soundOn: "pkm_sound_on",
+        stats: "pkm_stats",
+        masterBalls: "pkm_master_balls",
+        pokestopCooldown: "pkm_pokestop_cooldown",
+        volume: "pkm_volume",
+        pokedex: "pkm_pokedex",
+      };
+      this.POKEAPI_VALID_FORMS = {
+        // only include forms that PokéAPI has sprites for
+        mega: [
+          "charizard-mega-x",
+          "charizard-mega-y",
+          "mewtwo-mega-x",
+          "mewtwo-mega-y",
+          "lucario-mega",
+          "gyarados-mega",
+        ],
+        alolan: [
+          "raichu-alola",
+          "marowak-alola",
+          "vulpix-alola",
+          "ninetales-alola",
+        ],
+        galarian: ["zigzagoon-galar", "slowpoke-galar", "rapidash-galar"],
+        hisuian: ["zoroark-hisui", "braviary-hisui", "growlithe-hisui"],
+        paldean: ["wooper-paldea"],
+      };
+      this.SPRITE_NAME_FIXES = {
+        "shaymin-land": "shaymin",
+        "giratina-altered": "giratina",
+        "tornadus-incarnate": "tornadus",
+        "thundurus-incarnate": "thundurus",
+        "landorus-incarnate": "landorus",
+        "keldeo-ordinary": "keldeo",
+        "meloetta-aria": "meloetta",
+        "lycanroc-midday": "lycanroc",
+        "zygarde-50": "zygarde",
+        "wishiwashi-solo": "wishiwashi",
+        // Add more as needed
+      };
+      this.SOUNDS = {
+        hit: new Audio(
+          "https://github.com/jellowrld/pokemon-tampermonkey/raw/refs/heads/main/hit.mp3"
+        ),
+        ball: new Audio(
+          "https://github.com/jellowrld/pokemon-tampermonkey/raw/refs/heads/main/Throw.mp3"
+        ),
+        catch: new Audio(
+          "https://github.com/jellowrld/pokemon-tampermonkey/raw/refs/heads/main/06-caught-a-pokemon.mp3"
+        ),
+        faint: new Audio(
+          "https://github.com/jellowrld/pokemon-tampermonkey/raw/refs/heads/main/faint.mp3"
+        ),
+        run: new Audio(
+          "https://github.com/jellowrld/pokemon-tampermonkey/raw/refs/heads/main/runaway.mp3"
+        ),
+        start: new Audio(
+          "https://github.com/jellowrld/pokemon-tampermonkey/raw/refs/heads/main/wildbattle.mp3"
+        ),
+        victory: new Audio(
+          "https://github.com/jellowrld/pokemon-tampermonkey/raw/refs/heads/main/victory.mp3"
+        ),
+        lose: new Audio(
+          "https://github.com/jellowrld/pokemon-tampermonkey/raw/refs/heads/main/lose.mp3"
+        ),
+        stop: new Audio(""),
+        battleSound: new Audio(
+          "https://github.com/jellowrld/pokemon-tampermonkey/raw/refs/heads/main/wildbattle.mp3"
+        ),
+      };
+      this.XP_TO_LEVEL = (lvl) => 50 + lvl * 25;
+      this.getInt = (k, d = 0) => {
+        const v = parseInt(GM_getValue(k, d), 10);
+        return isNaN(v) ? d : v;
+      };
+      this.setInt = (k, v) => GM_setValue(k, parseInt(v, 10));
+
+      this.getBool = (k) => GM_getValue(k, "false") === "true";
+      this.setBool = (k, v) => GM_setValue(k, v ? "true" : "false");
+
+      this.getObj = (k) => {
+        try {
+          return JSON.parse(GM_getValue(k, "{}")) || {};
+        } catch {
+          return {};
+        }
+      };
+      this.setObj = (k, o) => GM_setValue(k, JSON.stringify(o));
+
+      this.getStr = (k, d = "") => GM_getValue(k, d);
+      this.setStr = (k, v) => GM_setValue(k, v);
+      this.getArr = (k) => {
+        try {
+          return JSON.parse(GM_getValue(k, "[]")) || [];
+        } catch {
+          return [];
+        }
+      };
+      this.setArr = (k, a) => GM_setValue(k, JSON.stringify(a));
+
+      if (!GM_getValue(this.STORAGE.coins)) this.setInt(this.STORAGE.coins, 100);
+      if (!GM_getValue(this.STORAGE.balls)) this.setInt(this.STORAGE.balls, 5);
+      if (!GM_getValue(this.STORAGE.potions)) this.setInt(this.STORAGE.potions, 2);
+      if (!GM_getValue(this.STORAGE.greatBalls)) this.setInt(this.STORAGE.greatBalls, 0);
+      if (!GM_getValue(this.STORAGE.ultraBalls)) this.setInt(this.STORAGE.ultraBalls, 0);
+      if (!GM_getValue(this.STORAGE.masterBalls)) this.setInt(this.STORAGE.masterBalls, 0);
+      if (!GM_getValue(this.STORAGE.pokestopCooldown))
+        setInt(this.STORAGE.pokestopCooldown, 0);
+      if (!GM_getValue(this.STORAGE.pokedex)) this.setArr(this.STORAGE.pokedex, []);
+      if (!GM_getValue(this.STORAGE.party)) {
+        this.setObj(this.STORAGE.party, {});
+      } else {
+        // Migration from old array party format
+        const val = GM_getValue(this.STORAGE.party);
+        try {
+          const parsed = JSON.parse(val);
+          if (Array.isArray(parsed)) {
+            const objParty = {};
+            for (const name of parsed) {
+              const key = name.toLowerCase();
+              objParty[key] = (objParty[key] || 0) + 1;
+            }
+            this.setObj(this.STORAGE.party, objParty);
+          }
+        } catch { }
+      }
+      if (!GM_getValue(this.STORAGE.soundOn)) this.setBool(this.STORAGE.soundOn, true);
+      if (!GM_getValue(this.STORAGE.xp)) this.setInt(this.STORAGE.xp, 0);
+      if (!GM_getValue(this.STORAGE.level)) this.setInt(this.STORAGE.level, 1);
+      if (!GM_getValue(this.STORAGE.stats)) this.setObj(this.STORAGE.stats, { hp: 100, atk: 15 });
 
       pokemon.configs.info("Loading configs...");
+    }
+
+    getRandomForm(baseName) {
+      const isShiny = Math.random() < 0.05;
+      const allForms = Object.entries(this.POKEAPI_VALID_FORMS).flatMap(
+        ([formType, names]) => names.map((name) => ({ formType, name }))
+      );
+
+      const possibleForms = allForms.filter((f) =>
+        f.name.startsWith(baseName.toLowerCase())
+      );
+
+      let form = null;
+      if (possibleForms.length && Math.random() < 0.12) {
+        form = possibleForms[Math.floor(Math.random() * possibleForms.length)];
+      }
+
+      const formName = form ? form.name : baseName.toLowerCase();
+      const displayName = `${baseName}`;
+
+      return { isShiny, formName, displayName };
+    }
+    getStats(name) {
+      const allStats = this.getObj(this.STORAGE.stats);
+      return (
+        allStats[name.toLowerCase()] || { xp: 0, level: 1, hp: 100, atk: 15 }
+      );
+    }
+
+    setStats(name, stats) {
+      const allStats = this.getObj(this.STORAGE.stats);
+      allStats[name.toLowerCase()] = stats;
+      this.setObj(this.STORAGE.stats, allStats);
     }
 
     logInfo() {
@@ -136,6 +309,7 @@ GM.xmlHttpRequest({
       this._updateChecking = true;
       pokemon.configs.info("Checking for updates...");
     }
+
   }
 
   class CheckUpdate {
@@ -249,23 +423,23 @@ GM.xmlHttpRequest({
   ];
   //#region Update check (optional, uncomment to enable)
   /*
-// ====== CONFIG ======
-const DOWNLOAD_URL =
+  // ====== CONFIG ======
+  const DOWNLOAD_URL =
   "https://raw.githubusercontent.com/D-Stokes-NC-Gaming-Studio/pokemon-tampermonkey/refs/heads/main/Pokemon%20Battle%20(Full%20Edition)-1.0.user.js";
-// If you prefer the link you pasted, it redirects from github.com -> raw.githubusercontent.com.
-// Using raw directly avoids extra hops.
-
-
-const CURRENT_VERSION =
+  // If you prefer the link you pasted, it redirects from github.com -> raw.githubusercontent.com.
+  // Using raw directly avoids extra hops.
+  
+  
+  const CURRENT_VERSION =
   typeof GM_info !== "undefined" && GM_info.script && GM_info.script.version
     ? GM_info.script.version
     : "0.0.0";
-const rVersion = fetchRemoteVersion(DOWNLOAD_URL);
-console.log("RemoteVersion: " + rVersion);
-console.log("CURRENTVERSION: " + CURRENT_VERSION);
-// ====== UPDATE CHECK ======
-// ====== VERSION COMPARISON (hardened) ======
-function normalizeVersion(v, length = 4) {
+  const rVersion = fetchRemoteVersion(DOWNLOAD_URL);
+  console.log("RemoteVersion: " + rVersion);
+  console.log("CURRENTVERSION: " + CURRENT_VERSION);
+  // ====== UPDATE CHECK ======
+  // ====== VERSION COMPARISON (hardened) ======
+  function normalizeVersion(v, length = 4) {
   // "v1.2.3" -> [1,2,3,0]
   // "1.2.3-beta.1" -> [1,2,3,1]
   // "1.0.0.0" -> [1,0,0,0]
@@ -279,10 +453,10 @@ function normalizeVersion(v, length = 4) {
   while (parts.length < length) parts.push(0);
   if (parts.length > length) parts.length = length;
   return parts;
-}
-
-// returns 1 if a>b, 0 if equal, -1 if a<b
-function compareVersions(a, b) {
+  }
+  
+  // returns 1 if a>b, 0 if equal, -1 if a<b
+  function compareVersions(a, b) {
   const A = normalizeVersion(a, 4);
   const B = normalizeVersion(b, 4);
   for (let i = 0; i < A.length; i++) {
@@ -290,10 +464,10 @@ function compareVersions(a, b) {
     if (A[i] < B[i]) return -1;
   }
   return 0;
-}
-
-// ====== FETCH REMOTE VERSION ======
-function fetchRemoteVersion(url) {
+  }
+  
+  // ====== FETCH REMOTE VERSION ======
+  function fetchRemoteVersion(url) {
   return new Promise((resolve) => {
     GM_xmlhttpRequest({
       method: "GET",
@@ -312,15 +486,15 @@ function fetchRemoteVersion(url) {
       ontimeout: () => resolve(null),
     });
   });
-}
-*/
+  }
+  */
 
 
   /**
- * Checks if there is an update available for this userscript.
- * @returns {Promise<boolean>} true if remote version > CURRENT_VERSION
-
-async function tampermonkeyNeedsUpdate() {
+  * Checks if there is an update available for this userscript.
+  * @returns {Promise<boolean>} true if remote version > CURRENT_VERSION
+  
+  async function tampermonkeyNeedsUpdate() {
   try {
     const remoteVersion = await fetchRemoteVersion(DOWNLOAD_URL);
     if (!remoteVersion) return false;
@@ -330,8 +504,8 @@ async function tampermonkeyNeedsUpdate() {
   } catch {
     return false;
   }
-}
-*/
+  }
+  */
   //#endregion
 
   // Check if current URL matches any blocklist rule
