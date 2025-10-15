@@ -1517,12 +1517,12 @@ GM.xmlHttpRequest({
     // Update Button (only if update available)
     let updateBtn = null;
     try {
-      const hasUpdate = await tampermonkeyNeedsUpdate();
+      const hasUpdate = await updater.needsUpdate();
       if (hasUpdate) {
         updateBtn = createButton(
           "⬆️ Update Available",
           () => {
-            window.open(DOWNLOAD_URL, "_blank");
+            window.open(this.DOWNLOAD_URL, "_blank");
           },
           "btn btn-danger"
         );
