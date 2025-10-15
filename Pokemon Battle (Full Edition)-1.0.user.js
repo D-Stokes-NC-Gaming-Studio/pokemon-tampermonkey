@@ -117,28 +117,32 @@ GM.xmlHttpRequest({
       url = "https://raw.githubusercontent.com/D-Stokes-NC-Gaming-Studio/pokemon-tampermonkey/main/Pokemon%20Battle%20(Full%20Edition)-1.0.user.js",
       currentVersion = (typeof GM_info !== "undefined" && GM_info?.script?.version)
         ? GM_info.script.version
-        : "0.0.0",
-
+        : "0.0.0"
     ) {
       this.DOWNLOAD_URL = url;
       this.CURRENT_VERSION = currentVersion;
       this._updateChecking = false;
+
       pokemon.configs.info("Loading configs...");
-
-
     }
+
     logInfo() {
       pokemon.configs.info("Config ready:", "Starting to check for updates...");
-      this.checkUpdates(); // ✅ kick off update check here
+      this.checkUpdates(); // ✅ Kick off update check here if you want
     }
+
     checkUpdates() {
       if (this._updateChecking) return;
       this._updateChecking = true;
-      new CheckUpdate(this); // constructor runs the check
+      pokemon.configs.info("Checking for updates...");
+    }
+  }
+
+  class CheckUpdate {
+    constructor(configs) {
+      this.configs = configs; // ✅ FIX: store reference
     }
 
-  }
-  class CheckUpdate {
     async check() {
       const remoteVersion = await this.fetchRemoteVersion(this.configs.DOWNLOAD_URL);
       pokemon.configs.info("Remote Version:", remoteVersion || "Unknown");
@@ -164,6 +168,12 @@ GM.xmlHttpRequest({
       if (confirm(`⚡ New version available (${remoteVersion}). Open download page?`)) {
         window.open(this.configs.DOWNLOAD_URL, "_blank");
       }
+    }
+
+    async needsUpdate() {
+      const remoteVersion = await this.fetchRemoteVersion(this.configs.DOWNLOAD_URL);
+      if (!remoteVersion) return false;
+      return this.compareVersions(remoteVersion, this.configs.CURRENT_VERSION) > 0;
     }
 
     async fetchRemoteVersion(url) {
@@ -210,8 +220,12 @@ GM.xmlHttpRequest({
     }
   }
 
-  // Example:
+  // ✅ Usage example:
   const cfg = new Configs();
+  cfg.logInfo(); // optional
+
+  const updater = new CheckUpdate(cfg);
+  updater.check(); // runs full check
 
 
 
@@ -303,26 +317,26 @@ GM.xmlHttpRequest({
   }
 */
 
-  
-/**
-   * Checks if there is an update available for this userscript.
-   * @returns {Promise<boolean>} true if remote version > CURRENT_VERSION
-   
-  async function tampermonkeyNeedsUpdate() {
-    try {
-      const remoteVersion = await fetchRemoteVersion(DOWNLOAD_URL);
-      if (!remoteVersion) return false;
-      // Debug (optional)
-      // console.log('remote:', remoteVersion, 'local:', CURRENT_VERSION, 'cmp:', compareVersions(remoteVersion, CURRENT_VERSION));
-      return compareVersions(remoteVersion, CURRENT_VERSION) > 0;
-    } catch {
-      return false;
+
+  /**
+     * Checks if there is an update available for this userscript.
+     * @returns {Promise<boolean>} true if remote version > CURRENT_VERSION
+     
+    async function tampermonkeyNeedsUpdate() {
+      try {
+        const remoteVersion = await fetchRemoteVersion(DOWNLOAD_URL);
+        if (!remoteVersion) return false;
+        // Debug (optional)
+        // console.log('remote:', remoteVersion, 'local:', CURRENT_VERSION, 'cmp:', compareVersions(remoteVersion, CURRENT_VERSION));
+        return compareVersions(remoteVersion, CURRENT_VERSION) > 0;
+      } catch {
+        return false;
+      }
     }
-  }
-  */
-//#endregion
-  
-// Check if current URL matches any blocklist rule
+    */
+  //#endregion
+
+  // Check if current URL matches any blocklist rule
   if (BLOCKLIST.some((rx) => rx.test(location.href))) return;
 
   // In addition to the above blocklist:
@@ -919,7 +933,7 @@ GM.xmlHttpRequest({
     // row.appendChild(createButton('👥 Party',openParty,'btn btn-success btn-sm'));
 
     (async () => {
-      const hasUpdate = await tampermonkeyNeedsUpdate();
+      const hasUpdate = await updater.needsUpdate();
 
       // Build button
       const settingsBtn = createButton(
