@@ -4,7 +4,7 @@
 // @connect     pokeapi.co
 // @connect     https://dstokesncstudio.com/pokeapi/pokeapi.php
 // @namespace   dstokesncstudio.com
-// @version     3.0.0.5
+// @version     3.0.0.6
 // @description Full version with XP, evolution, stats, sound, shop, battles, and walking partner — persistent across sites.
 // @include     *
 // @grant       GM.xmlHttpRequest
@@ -15,6 +15,7 @@
 // @grant       GM_addStyle
 // @connect     github.com
 // @connect     raw.githubusercontent.com
+// @connect     play.pokemonshowdown.com
 // ==/UserScript==
 /*
 How to use the request:
@@ -66,6 +67,156 @@ button .badge.bg-danger { animation: pulseBadge 1.2s infinite; position: relativ
 .detail-section{background:#141428;border:1px solid #2b2b3d;border-radius:10px;padding:8px;margin:8px 0;line-height:1.5}
 .detail-stats{width:100%;border-collapse:collapse;margin-top:6px}
 .detail-stats th,.detail-stats td{padding:6px;border-bottom:1px solid rgba(255,255,255,.15);text-align:left}
+/* === BAG / PARTY LAYOUT (final polished) === */
+
+.party-storage-panel {
+  background: #0c0c1b;
+  color: #fff;
+  border-radius: 10px;
+  padding: 16px;
+  font-family: "Segoe UI", sans-serif;
+  max-width: 800px;
+  margin: 20px auto;
+  box-sizing: border-box;
+}
+
+.party-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.party-header .name {
+  font-weight: 600;
+  font-size: 1.1em;
+}
+
+.box-nav {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* === GRID WRAPPERS === */
+.party-grid,
+.storage-grid {
+  display: grid;
+  justify-content: center;
+  gap: 8px;
+  margin: 35px 0;
+}
+
+.party-grid {
+  grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+  grid-auto-rows: 180px;
+}
+
+.storage-grid {
+  grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+  grid-auto-rows: 210px;
+}
+
+/* === INDIVIDUAL SLOTS === */
+.slot {
+  background: #161633;
+  border: 1px solid #333;
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 200px;
+  transition: transform 0.15s ease, background 0.15s;
+}
+
+.slot.empty {
+  opacity: 0.15;
+}
+
+.slot:hover:not(.empty) {
+  transform: scale(1.05);
+  background: #1d1d3a;
+}
+
+/* === MON CARD CONTENT === */
+.mon-card {
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+  height: 100%;
+  padding: 6px 2px;
+  box-sizing: border-box;
+}
+
+.mon-sprite img {
+  width: 60px;
+  height: 60px;
+  image-rendering: pixelated;
+}
+
+.mon-meta {
+  margin-top: 4px;
+  font-size: 0.85em;
+}
+
+.mon-name {
+  font-weight: bold;
+  font-size: 0.85em;
+  line-height: 1.1em;
+}
+
+.mon-sub {
+  font-size: 0.75em;
+  opacity: 0.8;
+}
+
+/* === BUTTON GROUP === */
+.mon-buttons {
+  margin-top: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.btn-xs {
+  font-size: 0.7em !important;
+  padding: 3px 6px !important;
+  line-height: 1.2;
+}
+
+/* === DIVIDERS & NOTES === */
+.sep {
+  border: none;
+  border-top: 1px solid #333;
+  margin: 10px 0;
+}
+
+.tiny.muted {
+  font-size: 0.8em;
+  opacity: 0.6;
+  text-align: center;
+  margin-bottom: 6px;
+}
+
+/* === RESPONSIVE FIX === */
+@media (max-width: 640px) {
+  .party-grid,
+  .storage-grid {
+    grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+    grid-auto-rows: 110px;
+  }
+  .slot {
+    height: 110px;
+  }
+  .mon-sprite img {
+    width: 48px;
+    height: 48px;
+  }
+}
+
 `);
   // 🔥 --- Custom Pokemon Logger (paste the whole code here) ---
   (function attachPokemonLogger(global = window) {
@@ -1163,18 +1314,44 @@ button .badge.bg-danger { animation: pulseBadge 1.2s infinite; position: relativ
     const root = wrap.querySelector("[data-hud-body]") || wrap;
     root.innerHTML = "";
 
-    // --- Fetch partner stats ---
-    const stored = getStr(STORAGE.starter);
-    const stats = stored
-      ? getStats(stored)
-      : { xp: 0, level: 1, hp: 100, atk: 15, currentHP: null };
-    const lvl = stats.level;
-    const xp = stats.xp;
-    const hp = stats.hp;
-    const maxHp = hp;
-    const curHp = stats.currentHP != null ? stats.currentHP : maxHp;
+    // --- Active Pokémon lookup ---
+    const starterId = GM_getValue("pkm_starter_id");
+    const party = getObj(STORAGE.party) || {};
+    const starterEntry = starterId ? party[starterId] : null;
+
+    // ✅ Determine current Pokémon name
+    const name = starterEntry?.name || getStr(STORAGE.starter) || null;
+
+    // --- Fetch stats ---
+    let stats;
+    if (starterId && starterEntry) {
+      // ✅ Load instance stats first
+      stats = getStatsForInstance(starterId, starterEntry.name);
+    } else if (name) {
+      // 🧩 Legacy fallback
+      stats = getStats(name);
+    } else {
+      // ❌ No Pokémon found — show empty UI
+      stats = { xp: 0, level: 1, hp: 100, atk: 15, currentHP: 100 };
+    }
+
+    // --- Safe defaults and clamping ---
+    let lvl = 0;
+    if(stats > MAX_LEVEL) {
+      lvl = MAX_LEVEL;
+    } else if(stats.level < 1) {
+      lvl = 1;
+    } else {
+      lvl = Math.max(1, stats.level ?? 1);
+    }
+    const xp = stats.xp ?? 0;
+    const maxHp = Math.max(1, stats.hp ?? 100);
+    const curHp = Math.min(maxHp, stats.currentHP ?? maxHp);
+    const atk = stats.atk ?? 15;
+
+    // ✅ Prevent NaN in progress calculations
     const { need: nextXp, pct: xpPct } = xpProgress(lvl, xp);
-    console.log(stats.currentHP);
+
     // --- Top row: Partner name + bars ---
     const topRow = document.createElement("div");
     Object.assign(topRow.style, {
@@ -1187,10 +1364,13 @@ button .badge.bg-danger { animation: pulseBadge 1.2s infinite; position: relativ
     // Partner label
     const partnerDiv = document.createElement("div");
     partnerDiv.id = "pkm-partner";
-    partnerDiv.textContent = stored
-      ? `Partner: ${stored[0].toUpperCase() + stored.slice(1)
-      } (Lv ${lvl}) | ATK: ${stats.atk}`
-      : "Choose your starter!";
+
+    if (name) {
+      partnerDiv.textContent = `Partner: ${name[0].toUpperCase() + name.slice(1)} (Lv ${lvl}) | ATK: ${atk}`;
+    } else {
+      partnerDiv.textContent = "Choose your starter!";
+    }
+
     topRow.appendChild(partnerDiv);
 
     // Bars container
@@ -1201,13 +1381,15 @@ button .badge.bg-danger { animation: pulseBadge 1.2s infinite; position: relativ
       flexShrink: "0",
     });
 
-    // HP wrapper
+    // --- HP bar ---
     const hpWrapper = document.createElement("div");
     hpWrapper.style.display = "flex";
     hpWrapper.style.flexDirection = "column";
+
     const hpLabel = document.createElement("small");
     hpLabel.id = "pkm-hp-label";
     hpLabel.textContent = `HP: ${curHp}/${maxHp}`;
+
     const hpPct = Math.round((curHp / maxHp) * 100);
     const hpBar = document.createElement("div");
     hpBar.id = "pkm-hp-bar";
@@ -1224,14 +1406,13 @@ button .badge.bg-danger { animation: pulseBadge 1.2s infinite; position: relativ
   `;
     hpWrapper.append(hpLabel, hpBar);
 
-    // XP wrapper
+    // --- XP bar ---
     const xpWrapper = document.createElement("div");
     xpWrapper.style.display = "flex";
     xpWrapper.style.flexDirection = "column";
+
     const xpLabel = document.createElement("small");
     xpLabel.id = "pkm-xp-label";
-
-    // ✅ Update label
     xpLabel.textContent = `XP: ${xp}/${nextXp}`;
 
     const xpBar = document.createElement("div");
@@ -1250,12 +1431,12 @@ button .badge.bg-danger { animation: pulseBadge 1.2s infinite; position: relativ
 
     bars.append(hpWrapper, xpWrapper);
     topRow.append(bars);
-
     root.appendChild(topRow);
 
-    // --- Currency & timers line ---
+    // --- Currency & timers ---
     const status = document.createElement("div");
     let timerStr = "";
+
     if (nextBattleTime && randomBattleEnabled) {
       const d = Math.max(0, nextBattleTime - Date.now());
       timerStr += ` | <span id="nextBattleStatus">Next Battle: ${Math.floor(d / 60000)}m ${Math.floor(
@@ -1264,6 +1445,7 @@ button .badge.bg-danger { animation: pulseBadge 1.2s infinite; position: relativ
     } else {
       timerStr += ` | <span id="nextBattleStatus">Next Battle: —</span>`;
     }
+
     const psCd = getInt(STORAGE.pokestopCooldown);
     if (psCd > Date.now()) {
       const r = psCd - Date.now();
@@ -1273,10 +1455,10 @@ button .badge.bg-danger { animation: pulseBadge 1.2s infinite; position: relativ
     } else {
       timerStr += ` | <span id="pokeStopStatus">PokéStop: Ready!</span>`;
     }
+
     status.innerHTML = `<span id="pk-header-coins">💰 Coins: ${getInt(STORAGE.coins)}</span> | Balls: ${getInt(
       STORAGE.balls
     )} | Potions: ${getInt(STORAGE.potions)}${timerStr}`;
-
     root.appendChild(status);
 
     // --- Buttons row ---
@@ -1288,75 +1470,33 @@ button .badge.bg-danger { animation: pulseBadge 1.2s infinite; position: relativ
       marginTop: "8px",
     });
 
-    row.appendChild(
-      createButton("⚔️ Battle", openBattle, "btn btn-success btn-sm")
-    );
-    /*
-    row.appendChild(
-      createButton("🧑‍🤝‍🧑 Friends", openFriends, "btn btn-success btn-sm")
-    );
-    row.appendChild(
-      createButton("📅 Events", openEvents, "btn btn-success btn-sm")
-    );
-    row.appendChild(
-      createButton("📬 Inbox", openInbox, "btn btn-success btn-sm")
-    );
-    row.appendChild(
-      createButton("📰 News", openNews, "btn btn-success btn-sm")
-    );
-    row.appendChild(
-      createButton("🎯 Quests", openQuests, "btn btn-success btn-sm")
-    );
-    row.appendChild(
-      createButton("🧪 Research", openResearch, "btn btn-success btn-sm")
-    );
-    */
-    row.appendChild(
-      createButton("Pokemon Center", pokeCenter, "btn btn-success btn-sm")
-    );
-    row.appendChild(
-      createButton("📍 PokéStop", openPokeStop, "btn btn-success btn-sm")
-    );
-    row.appendChild(
-      createButton("🛒 Shop", openShop, "btn btn-success btn-sm")
-    );
+    row.appendChild(createButton("⚔️ Battle", openBattle, "btn btn-success btn-sm"));
+    row.appendChild(createButton("Pokemon Center", pokeCenter, "btn btn-success btn-sm"));
+    row.appendChild(createButton("📍 PokéStop", openPokeStop, "btn btn-success btn-sm"));
+    row.appendChild(createButton("🛒 Shop", openShop, "btn btn-success btn-sm"));
     row.appendChild(createButton("🎒 Bag", openBag, "btn btn-success btn-sm"));
-    row.appendChild(
-      createButton("📖 Pokédex", openPokedex, "btn btn-success btn-sm")
-    );
-    row.appendChild(
-      createButton("🐞 Debug", openDebugPanel, "btn btn-success btn-sm")
-    );
-    // row.appendChild(createButton('👥 Party',openParty,'btn btn-success btn-sm'));
+    row.appendChild(createButton("📖 Pokédex", openPokedex, "btn btn-success btn-sm"));
+    row.appendChild(createButton("🐞 Debug", openDebugPanel, "btn btn-success btn-sm"));
 
     (async () => {
       const hasUpdate = await updater.needsUpdate();
-
-      // Build button
-      const settingsBtn = createButton(
-        "⚙️ Settings",
-        openSettings,
-        "btn btn-success btn-sm"
-      );
-
+      const settingsBtn = createButton("⚙️ Settings", openSettings, "btn btn-success btn-sm");
       if (hasUpdate) {
         const badge = document.createElement("span");
-        badge.className =
-          "badge rounded-pill bg-danger top-0 translate-middle position-relative";
-        badge.textContent = "!"; // or "?"
-        // Spacing so badge doesn’t crowd the label
+        badge.className = "badge rounded-pill bg-danger top-0 translate-middle position-relative";
+        badge.textContent = "!";
         badge.style.marginLeft = "6px";
         settingsBtn.appendChild(badge);
       }
-
       row.appendChild(settingsBtn);
     })();
 
     root.appendChild(row);
     updatePokeStopTimer();
     updateNextBattleTimer();
-
   }
+
+
   function updateHeaderHP() {
     const hpLabel = document.querySelector("#pkm-hp-label");
     const hpBar = document.querySelector("#pkm-hp-bar");
@@ -1381,14 +1521,44 @@ button .badge.bg-danger { animation: pulseBadge 1.2s infinite; position: relativ
 
   }
   // --- Partner setup ---
-  function initPartner() {
-    const stored = getStr(STORAGE.starter);
-    if (stored) fetchPartner(stored);
-    else {
-      renderHeader();
-      setTimeout(openStarter, 300);
+  async function initPartner() {
+    // 1️⃣ Always migrate first
+    await migratePartyToInstancesIfNeeded();
+
+    // 2️⃣ Reload updated party
+    const party = getObj(STORAGE.party) || {};
+    const starterId = GM_getValue("pkm_starter_id");
+
+    // 3️⃣ Load active Pokémon if instance ID exists
+    if (starterId && party[starterId]) {
+      const entry = party[starterId];
+      console.log(`🎮 Loading active Pokémon: ${entry.name} (#${starterId.slice(-6)})`);
+      await fetchPartner(starterId); // ✅ Use ID
+      return;
     }
+
+    // 4️⃣ Fallback: handle legacy starter name
+    const legacyStarter = getStr(STORAGE.starter);
+    if (legacyStarter) {
+      const found = Object.entries(party).find(
+        ([, p]) => p.name?.toLowerCase() === legacyStarter.toLowerCase()
+      );
+      if (found) {
+        const [id, entry] = found;
+        GM_setValue("pkm_starter_id", id);
+        console.log(`🕹️ Migrated legacy starter: ${legacyStarter} → ${id}`);
+        await fetchPartner(id);
+        return;
+      }
+    }
+
+    // 5️⃣ No Pokémon found — open starter selection
+    console.log("🔰 No active Pokémon found. Opening starter menu...");
+    renderHeader();
+    setTimeout(openStarter, 300);
   }
+
+
   function updatePokeStopTimer() {
     const status = document.querySelector("#pokeStopStatus");
     if (!status) return;
@@ -1472,119 +1642,128 @@ button .badge.bg-danger { animation: pulseBadge 1.2s infinite; position: relativ
       scheduleRandomBattle(); // Schedule next
     }, delay);
   }
-async function fetchPartner(name) {
-  if (!name) return;
+  async function fetchPartner(identifier) {
+    if (!identifier) return;
 
-  starterName = name;
-  partnerName = name[0].toUpperCase() + name.slice(1);
+    const party = getObj(STORAGE.party) || {};
+    let id = identifier;
+    let name = null;
 
-  // Normalize and fix form names
-  const rawName = name.toLowerCase().replace("shiny ", "");
-  const fixedName = SPRITE_NAME_FIXES[rawName] || rawName;
+    // 🧠 Determine if identifier is ID or name
+    if (!party[id]) {
+      const match = Object.entries(party).find(
+        ([, entry]) => entry.name?.toLowerCase() === identifier.toLowerCase()
+      );
+      if (match) {
+        id = match[0];
+        name = match[1].name;
+      } else {
+        name = identifier; // still fallback
+      }
+    } else {
+      name = party[id].name;
+    }
 
-  // Try to find Pokédex entry
-  const pokedex = getArr(STORAGE.pokedex);
-  let dexEntry = pokedex.find((p) => p.name.toLowerCase() === fixedName);
+    // 💾 Remember current active Pokémon instance
+    GM_setValue("pkm_starter_id", id);
+    setStr(STORAGE.starter, name);
 
-  // Use saved sprite if exists
-  if (dexEntry?.spriteUrl) {
-    partnerSpriteUrl = dexEntry.spriteUrl;
-  } else {
+    starterName = name;
+    partnerName = name[0].toUpperCase() + name.slice(1);
+
+    // Normalize sprite name
+    const rawName = name.toLowerCase().replace("shiny ", "");
+    const fixedName = SPRITE_NAME_FIXES[rawName] || rawName;
+
+    const pokedex = getArr(STORAGE.pokedex);
+    let dexEntry = pokedex.find((p) => p.name.toLowerCase() === fixedName);
+
+    // ✅ Choose best available sprite
     const showdownGif = `https://play.pokemonshowdown.com/sprites/ani/${fixedName}.gif`;
     const bwGif = `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/versions/generation-v/black-white/animated/${fixedName}.gif`;
     const staticPng = `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${fixedName}.png`;
 
-    partnerSpriteUrl = showdownGif;
-    if (!(await imageExists(showdownGif))) {
+    partnerSpriteUrl = dexEntry?.spriteUrl || showdownGif;
+    if (!(await imageExists(partnerSpriteUrl))) {
       partnerSpriteUrl = (await imageExists(bwGif)) ? bwGif : staticPng;
     }
+
+    // ✅ Load per-instance stats
+    let currentStats = getStatsForInstance(id, name);
+
+    const missingCoreStats = ["hp", "atk", "def", "spAtk", "spDef", "speed"].some(
+      (k) => currentStats[k] == null
+    );
+
+    // ✅ Fetch PokéAPI stats if missing
+    if (missingCoreStats) {
+      console.log(`📡 Fetching ${name} stats from PokéAPI (missing data)...`);
+
+      await new Promise((resolve) => {
+        GM.xmlHttpRequest({
+          method: "GET",
+          url: `https://pokeapi.co/api/v2/pokemon/${encodeURIComponent(fixedName)}`,
+          onload: (res) => {
+            try {
+              const d = JSON.parse(res.responseText);
+              const partial = extractStatsFromPokeApi(d);
+
+              // Merge without losing currentHP or XP
+              const merged = { ...currentStats };
+              for (const k in partial) {
+                if (merged[k] == null) merged[k] = partial[k];
+              }
+
+              // Clamp HP if it changed
+              if (partial.hp) {
+                merged.currentHP = Math.min(
+                  merged.currentHP ?? partial.hp,
+                  partial.hp
+                );
+                merged.hp = partial.hp;
+              }
+
+              setStatsForInstance(id, merged);
+
+              // ✅ Update Pokédex entry
+              const entry = {
+                id: d.id,
+                name: d.name[0].toUpperCase() + d.name.slice(1),
+                spriteUrl: d.sprites.front_default || partnerSpriteUrl,
+                types: partial.types || [],
+                abilities: partial.abilities || [],
+                stats: d.stats.map((s) => ({
+                  name: s.stat.name,
+                  value: s.base_stat,
+                })),
+                hp: partial.hp,
+                level: merged.level || 1,
+                xp: merged.xp || 0,
+                currentHP: merged.currentHP,
+              };
+
+              recordPokedex(entry);
+              dexEntry = entry;
+              partnerSpriteUrl = entry.spriteUrl;
+            } catch (err) {
+              console.error("❌ Failed to parse PokéAPI:", err);
+            }
+            resolve();
+          },
+          onerror: (err) => {
+            console.error("❌ Failed to fetch partner:", err);
+            resolve();
+          },
+        });
+      });
+    } else {
+      console.log(`✅ Loaded ${name} from storage (no API call needed).`);
+    }
+
+    // ✅ Render UI for current partner
+    renderHeader();
+    spawnWalkingSprite(partnerSpriteUrl);
   }
-
-  // ✅ Fetch data from PokéAPI
-  await new Promise((resolve) => {
-    GM.xmlHttpRequest({
-      method: "GET",
-      url: `https://pokeapi.co/api/v2/pokemon/${encodeURIComponent(fixedName)}`,
-      onload: async (res) => {
-        try {
-          const d = JSON.parse(res.responseText);
-
-          // --- Build new stat data from API ---
-          const newStats = {
-            hp: d.stats.find((s) => s.stat.name === "hp")?.base_stat,
-            atk: d.stats.find((s) => s.stat.name === "attack")?.base_stat,
-            def: d.stats.find((s) => s.stat.name === "defense")?.base_stat,
-            spAtk: d.stats.find((s) => s.stat.name === "special-attack")?.base_stat,
-            spDef: d.stats.find((s) => s.stat.name === "special-defense")?.base_stat,
-            speed: d.stats.find((s) => s.stat.name === "speed")?.base_stat,
-            types: d.types.map((t) => t.type.name),
-            abilities: d.abilities.map((a) => a.ability.name),
-          };
-
-          // ✅ Merge: keep *all existing* stats, only update new ones if missing
-          const existingStats = getStats(name);
-          const mergedStats = { ...existingStats };
-
-          for (const key in newStats) {
-            if (newStats[key] !== undefined && newStats[key] !== null) {
-              // ✅ Only update if missing or outdated
-              mergedStats[key] = newStats[key];
-            }
-          }
-
-          // ✅ Keep or clamp currentHP
-          if (mergedStats.hp !== undefined) {
-            if (mergedStats.currentHP == null) {
-              mergedStats.currentHP = mergedStats.hp;
-            } else {
-              mergedStats.currentHP = Math.min(
-                mergedStats.hp,
-                mergedStats.currentHP
-              );
-            }
-          }
-
-          // ✅ Save back into storage (preserving everything else)
-          setStats(name, mergedStats);
-          console.log(`✅ Stats merged for ${name}:`, mergedStats);
-
-          // --- Update Pokédex entry ---
-          const entry = {
-            id: d.id,
-            name: d.name[0].toUpperCase() + d.name.slice(1),
-            spriteUrl: d.sprites.front_default || partnerSpriteUrl,
-            types: newStats.types,
-            abilities: newStats.abilities,
-            stats: d.stats.map((s) => ({
-              name: s.stat.name,
-              value: s.base_stat,
-            })),
-            hp: newStats.hp,
-            level: mergedStats.level || 1,
-            xp: mergedStats.xp || 0,
-            currentHP: mergedStats.currentHP,
-          };
-
-          await recordPokedex(entry);
-          dexEntry = entry;
-          partnerSpriteUrl = entry.spriteUrl;
-        } catch (err) {
-          console.error("❌ Failed to parse PokéAPI:", err);
-        }
-        resolve();
-      },
-      onerror: (err) => {
-        console.error("❌ Failed to fetch partner:", err);
-        resolve();
-      },
-    });
-  });
-
-  // ✅ Render AFTER stats are updated
-  renderHeader();
-  spawnWalkingSprite(partnerSpriteUrl);
-}
-
 
   function extractStatsFromPokeApi(d) {
     if (!d || !Array.isArray(d.stats)) return {};
@@ -2023,25 +2202,63 @@ async function fetchPartner(name) {
   }
 
   function renderFilteredList(names, container, searchEl) {
-    const filter = searchEl.value.toLowerCase();
+    const filter = searchEl.value.trim().toLowerCase();
     container.innerHTML = "";
-    names
-      .filter((name) => name.includes(filter))
-      .slice(0, 50) // limit to 50 results for performance
-      .forEach((name) => {
-        const btn = createButton(
-          name[0].toUpperCase() + name.slice(1),
-          () => {
-            setStr(STORAGE.starter, name);
-            fetchPartner(name);
-            closeStarter();
-          },
-          "btn btn-success"
-        );
-        btn.style.margin = "2px";
-        container.appendChild(btn);
-      });
+
+    // ✅ Filter results by name (case-insensitive) and limit for performance
+    const filtered = names
+      .filter((n) => n.toLowerCase().includes(filter))
+      .slice(0, 50);
+
+    if (filtered.length === 0) {
+      const noRes = document.createElement("div");
+      noRes.textContent = "No Pokémon found.";
+      noRes.style.opacity = "0.7";
+      noRes.style.marginTop = "8px";
+      container.appendChild(noRes);
+      return;
+    }
+
+    for (const name of filtered) {
+      const displayName = name[0].toUpperCase() + name.slice(1);
+
+      const btn = createButton(
+        displayName,
+        () => {
+          // ✅ Generate a unique instance ID for this starter
+          const id = generateUniqueId(name);
+
+          // Create new party entry if not exists
+          const party = getObj(STORAGE.party) || {};
+          if (!party[id]) {
+            party[id] = {
+              name,
+              caughtAt: Date.now(),
+            };
+            setObj(STORAGE.party, party);
+          }
+
+          // ✅ Set as active Pokémon (instance-based)
+          GM_setValue("pkm_starter_id", id);
+          GM_setValue(STORAGE.starter, name);
+
+          // ✅ Load it immediately
+          fetchPartner(id);
+
+          // ✅ Close the starter selection UI
+          closeStarter();
+
+          // ✅ Refresh header UI
+          renderHeader();
+        },
+        "btn btn-success"
+      );
+
+      btn.style.margin = "2px";
+      container.appendChild(btn);
+    }
   }
+
   function closeStarter() {
     if (starterPanel) document.body.removeChild(starterPanel);
     starterPanel = null;
@@ -2120,68 +2337,94 @@ button .badge.bg-danger {
     updateHeaderHP();
     renderHeader();
   }
-  function evolvePartner() {
-    const stats = getStats(starterName);
-    GM.xmlHttpRequest({
-      method: "GET",
-      url: `https://pokeapi.co/api/v2/pokemon-species/${starterName.toLowerCase()}`,
-      onload(res) {
-        const species = JSON.parse(res.responseText);
-        GM.xmlHttpRequest({
-          method: "GET",
-          url: species.evolution_chain.url,
-          onload(evRes) {
-            const chain = JSON.parse(evRes.responseText).chain;
-            let current = chain;
-            let found = false;
+  async function evolvePartner() {
+    const starterId = GM_getValue("pkm_starter_id");
+    const party = getObj(STORAGE.party) || {};
+    const starter = party[starterId];
 
-            // Traverse the chain to find the current Pokémon
-            while (current && !found) {
-              if (current.species.name === starterName.toLowerCase()) {
-                found = true;
-                break;
-              }
-              if (current.evolves_to.length) {
-                current = current.evolves_to[0];
-              } else break;
-            }
+    if (!starter) {
+      alert("⚠️ No active Pokémon selected!");
+      return;
+    }
 
-            // ✅ Stop if already in final evolution form
-            if (!found || current.evolves_to.length === 0) {
-              return; // Already fully evolved
-            }
+    const starterName = starter.name;
+    const stats = getStatsForInstance(starterId, starterName);
 
-            const nextForm = current.evolves_to[0];
-            const nextName = nextForm.species.name;
-            const evoDetails = nextForm.evolution_details[0];
+    try {
+      // --- Fetch species data ---
+      const speciesRes = await fetch(`https://pokeapi.co/api/v2/pokemon-species/${starterName.toLowerCase()}`);
+      const species = await speciesRes.json();
 
-            // ✅ Evolve only if it's a level-up and min_level is defined
-            if (
-              evoDetails?.trigger?.name === "level-up" &&
-              typeof evoDetails.min_level === "number"
-            ) {
-              const requiredLevel = evoDetails.min_level;
+      // --- Fetch evolution chain ---
+      const evoRes = await fetch(species.evolution_chain.url);
+      const evoData = await evoRes.json();
+      const chain = evoData.chain;
 
-              if (stats.level === requiredLevel) {
-                const oldStats = getStats(starterName);
-                oldStats.atk += 10;
-                oldStats.hp += math.floor(oldStats.hp * 0.2);
-                oldStats.currentHP = oldStats.hp;
+      // --- Find the current Pokémon in the chain ---
+      let current = chain;
+      let found = false;
 
-                setStr(STORAGE.starter, nextName);
-                fetchPartner(nextName);
-                setStats(nextName, { ...oldStats });
-                alert(
-                  `✨ Your Pokémon evolved into ${nextName[0].toUpperCase() + nextName.slice(1)
-                  }!`
-                );
-              }
-            }
-          },
-        });
-      },
-    });
+      while (current && !found) {
+        if (current.species.name === starterName.toLowerCase()) {
+          found = true;
+          break;
+        }
+        if (current.evolves_to.length) {
+          current = current.evolves_to[0];
+        } else break;
+      }
+
+      // --- Stop if final evolution ---
+      if (!found || current.evolves_to.length === 0) {
+        alert(`${starterName} cannot evolve further!`);
+        return;
+      }
+
+      const nextForm = current.evolves_to[0];
+      const nextName = nextForm.species.name;
+      const evoDetails = nextForm.evolution_details[0];
+
+      // --- Evolve only if triggered by level-up and has a min_level ---
+      if (
+        evoDetails?.trigger?.name === "level-up" &&
+        typeof evoDetails.min_level === "number"
+      ) {
+        const requiredLevel = evoDetails.min_level;
+
+        if (stats.level >= requiredLevel) {
+          console.log(`🧬 Evolution triggered! ${starterName} → ${nextName}`);
+
+          // --- Update stats dynamically ---
+          const evolvedStats = { ...stats };
+          evolvedStats.atk = Math.round(evolvedStats.atk * 1.2);
+          evolvedStats.hp = Math.round(evolvedStats.hp * 1.25);
+          evolvedStats.currentHP = evolvedStats.hp;
+
+          // --- Update the party entry (keep same ID) ---
+          party[starterId].name = nextName;
+          setObj(STORAGE.party, party);
+
+          // --- Save evolved stats ---
+          setStatsForInstance(starterId, evolvedStats);
+
+          // --- Update starter and HUD ---
+          GM_setValue(STORAGE.starter, nextName);
+          fetchPartner(starterId);
+          renderHeader();
+
+          alert(`✨ Your ${starterName} evolved into ${nextName[0].toUpperCase() + nextName.slice(1)}!`);
+        } else {
+          alert(`${starterName} needs to reach Lv ${requiredLevel} to evolve.`);
+        }
+      } else {
+        alert(`${starterName} cannot evolve by level-up.`);
+      }
+    } catch (err) {
+      console.error("❌ Evolution failed:", err);
+      alert("Evolution failed — check console for details.");
+    }
   }
+
 
   // === Status Effects ===
   let wildStatus = { poison: 0, burn: 0, sleep: 0 };
@@ -2645,7 +2888,7 @@ button .badge.bg-danger {
     if (wHP <= 0) winBattle();
     else {
       drawBattle(`You hit for ${dmg}!`);
-      setTimeout(wildAttack, 500);
+      setTimeout(wildAttack, 800);
     }
   }
 
@@ -2760,47 +3003,74 @@ button .badge.bg-danger {
     }
   }
   function catchIt() {
-    // 1) add to your party
-    const party = getObj(STORAGE.party);
-    const key = wild.name.toLowerCase();
-    party[key] = (party[key] || 0) + 1;
+    if (!wild || !wild.name) return;
+
+    // --- 1) Add unique Pokémon instance ---
+    const party = getObj(STORAGE.party) || {};
+    const id = generateUniqueId(wild.name); // e.g. "charmeleon_lsn3do_9q8"
+
+    // Preserve shiny + sprite info if available
+    party[id] = {
+      name: wild.name,
+      caughtAt: Date.now(),
+      isShiny: wild.isShiny || (wild.sprite?.includes("/shiny/") ?? false),
+      spriteUrl: wild.sprite || null,
+    };
     setObj(STORAGE.party, party);
 
-    // 2) record into the Pokédex
-    GM.xmlHttpRequest({
-      method: "GET",
-      url: `https://pokeapi.co/api/v2/pokemon/${key}`,
-      onload(res) {
-        try {
-          const d = JSON.parse(res.responseText);
-          recordPokedex({
-            id: d.id,
-            name: d.name[0].toUpperCase() + d.name.slice(1),
-            spriteUrl: wild.sprite,
-            types: d.types.map((t) => t.type.name),
-          });
-        } catch (err) {
-          console.warn("Pokédex record failed", err);
-        }
+    // --- 2) Initialize stats for this new Pokémon ---
+    const allStats = getObj(STORAGE.stats) || {};
+    const baseStats = getStats(wild.name); // species base
+    allStats[id] = { ...baseStats }; // clone species stats into instance
+    setObj(STORAGE.stats, allStats);
 
-        // 3) rest of your catch flow
-        SOUNDS.battleSound.pause();
-        SOUNDS.battleSound.currentTime = 0;
-        playSound("catch");
-        drawBattle(`Caught ${wild.name}!`);
-        setTimeout(closeBattle, 1500);
-      },
-      onerror(err) {
-        console.warn("Failed to fetch Pokémon for Pokédex:", err);
-        // still finish the catch
-        SOUNDS.battleSound.pause();
-        SOUNDS.battleSound.currentTime = 0;
-        playSound("catch");
-        drawBattle(`Caught ${wild.name}!`);
-        setTimeout(closeBattle, 1500);
-      },
-    });
+    // --- 3) Record in Pokédex (if missing) ---
+    const pokedex = getArr(STORAGE.pokedex);
+    const alreadyInDex = pokedex.some(
+      (p) => p.name.toLowerCase() === wild.name.toLowerCase()
+    );
+
+    if (!alreadyInDex) {
+      GM.xmlHttpRequest({
+        method: "GET",
+        url: `https://pokeapi.co/api/v2/pokemon/${encodeURIComponent(
+          wild.name.toLowerCase()
+        )}`,
+        onload(res) {
+          try {
+            const d = JSON.parse(res.responseText);
+            recordPokedex({
+              id: d.id,
+              name: d.name[0].toUpperCase() + d.name.slice(1),
+              spriteUrl: wild.sprite || d.sprites.front_default,
+              types: d.types.map((t) => t.type.name),
+              abilities: d.abilities.map((a) => a.ability.name),
+            });
+          } catch (err) {
+            console.warn("Pokédex record failed:", err);
+          }
+
+          finishCatch(wild.name);
+        },
+        onerror(err) {
+          console.warn("Pokédex fetch failed:", err);
+          finishCatch(wild.name);
+        },
+      });
+    } else {
+      finishCatch(wild.name);
+    }
   }
+
+  // --- Helper to finish catch animation/sound ---
+  function finishCatch(name) {
+    SOUNDS.battleSound.pause();
+    SOUNDS.battleSound.currentTime = 0;
+    playSound("catch");
+    drawBattle(`Caught ${name}!`);
+    setTimeout(closeBattle, 1500);
+  }
+
   function usePotion() {
     if (getInt(STORAGE.potions) <= 0) return drawBattle("No Potions!");
 
@@ -2972,15 +3242,14 @@ button .badge.bg-danger {
       top: "50%",
       left: "50%",
       transform: "translate(-50%, -50%)",
-      background: "#fff",
       color: "#000",
       padding: "12px",
-      border: "2px solid black",
       zIndex: "10000",
-      maxHeight: "80vh",
+      height: "570px",
+      width: "720px",
       overflowY: "auto",
     });
-    bagPanel.classList = "w-auto";
+
     document.body.appendChild(bagPanel);
     drawBag();
   }
@@ -3026,7 +3295,7 @@ button .badge.bg-danger {
   function drawBag(msg) {
     const party = getObj(STORAGE.party);
     const names = Object.keys(party);
-    bagPanel.innerHTML = "<strong>Your Pokémon Bag:</strong><br>";
+
 
     // Sort Controls
     const sortOptions = document.createElement("div");
@@ -3070,135 +3339,292 @@ button .badge.bg-danger {
     });
   }
 
-  // --- ✅ Full Bag UI with working sprite loading ---
-  async function drawBagSorted(sortBy, msg) {
-    const party = getObj(STORAGE.party);
-    const names = Object.keys(party);
+  async function drawBagSorted(sortBy = "name", msg = "") {
+    const pokedex = getArr(STORAGE.pokedex) || [];
+    const statsAll = getObj(STORAGE.stats) || {};
+    const bagWrap = bagPanel;
+    bagWrap.innerHTML = `<strong>Party & Storage</strong><br>`;
 
-    // ✅ Parse the Pokédex array
-    const pokedex = getArr(STORAGE.pokedex);
+    // Helper to always pull the newest list
+    function getSortedList() {
+      const d = getObj(STORAGE.party) || {};
+      return Object.entries(d).sort((a, b) => a[1].name.localeCompare(b[1].name));
+    }
+    function getOrderedList() {
+      const data = getObj(STORAGE.party) || {};
+      return Object.entries(data); // no sorting!
+    }
 
-    const sorted = [...names].sort((a, b) => {
-      if (sortBy === "name") return a.localeCompare(b);
-      if (sortBy === "quantity") return party[b] - party[a];
-      if (sortBy === "rarity") {
-        const ranks = { common: 1, uncommon: 2, rare: 3, legendary: 4 };
-        return ranks[getRarity(b)] - ranks[getRarity(a)];
-      }
-      return 0;
-    });
+    const all = getOrderedList();
+    const partyEntries = all.slice(0, 6);
+    const storageEntries = all.slice(6);
 
     const container = document.createElement("div");
-    if (msg) {
-      const m = document.createElement("div");
-      m.textContent = msg;
-      container.appendChild(m);
+    container.className = "party-storage-panel";
+
+    // --- Header ---
+    container.innerHTML = `
+    <div class="party-header">
+      <div class="name">Party & Storage</div>
+      <div class="box-nav">
+        <button class="btn btn-success btn-sm">⟨</button>
+        <span class="muted small">Box 1</span>
+        <button class="btn btn-success btn-sm">⟩</button>
+      </div>
+    </div>`;
+
+    // === Card builder ===
+    function makeCard(id, mon) {
+      const name = mon.name;
+      const dex = pokedex.find(p => p.name.toLowerCase() === name.toLowerCase());
+      const sprite = dex?.spriteUrl ||
+        `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${name.toLowerCase()}.png`;
+      const st = statsAll[id] || { level: 1 };
+      const level = st.level || 1;
+      const rarity = getRarity(name);
+      const base = { common: 2, uncommon: 5, rare: 10, legendary: 20 };
+      const value = (base[rarity] || 1) * (level + 1);
+
+      const c = document.createElement("div");
+      c.className = "mon-card";
+      c.draggable = true;
+      c.dataset.id = id;
+      c.innerHTML = `
+      <div class="mon-sprite"><img src="${sprite}" alt="${name}"></div>
+      <div class="mon-meta"><div class="mon-name">${name}</div><div class="mon-sub">Lv ${level}</div></div>
+      <div class="mon-buttons">
+        <button class="btn btn-success btn-xs">Set Active</button>
+        <button class="btn btn-danger btn-xs">Sell (${value}c)</button>
+      </div>`;
+
+      // drag
+      c.addEventListener("dragstart", e => {
+        e.dataTransfer.setData("text/plain", id);
+        e.dataTransfer.effectAllowed = "move";
+      });
+
+      const [setBtn, sellBtn] = c.querySelectorAll("button");
+      setBtn.onclick = () => {
+        GM_setValue("pkm_starter_id", id);
+        setStr(STORAGE.starter, name);
+        changePokemon(id);
+        renderHeader();
+      };
+      sellBtn.onclick = () => {
+        const bag = getObj(STORAGE.party) || {};
+        delete bag[id];
+        setObj(STORAGE.party, bag);
+        setInt(STORAGE.coins, getInt(STORAGE.coins) + value);
+        const st = getObj(STORAGE.stats) || {};
+        delete st[id];
+        setObj(STORAGE.stats, st);
+        drawBagSorted(sortBy, `${name} sold for ${value} coins.`);
+      };
+      return c;
     }
 
-    if (sorted.length === 0) {
-      container.innerHTML += "<em>You haven’t caught any Pokémon yet.</em>";
-    } else {
-      for (const name of sorted) {
-        const count = party[name];
-        const row = document.createElement("div");
-        row.style.display = "flex";
-        row.style.alignItems = "center";
-        row.style.justifyContent = "space-between";
-        row.style.margin = "4px 0";
+    // === Slot builder ===
+    function makeSlot(entry, i, zone) {
+      const slot = document.createElement("div");
+      slot.className = "slot";
+      slot.dataset.zone = zone;
+      slot.dataset.index = i;
+      slot.addEventListener("dragover", e => e.preventDefault());
+      slot.addEventListener("drop", e => {
+        e.preventDefault();
+        const draggedId = e.dataTransfer.getData("text/plain");
+        handleDrop(draggedId, zone, i);
+      });
 
-        const img = document.createElement("img");
+      if (entry) {
+        const [id, mon] = entry;
+        slot.appendChild(makeCard(id, mon));
+      } else slot.classList.add("empty");
 
-        // ✅ Find this Pokémon in the pokedex
-        const dexEntry = pokedex.find(
-          (p) => p.name.toLowerCase() === name.toLowerCase()
-        );
+      return slot;
+    }
 
-        let spriteUrl = null;
+    // === Drop handler ===
+    function handleDrop(draggedId, zone, index) {
+      const curList = getOrderedList();
+      const dragged = curList.find(([id]) => id === draggedId);
+      if (!dragged) return;
+      const rest = curList.filter(([id]) => id !== draggedId);
 
-        if (dexEntry && dexEntry.spriteUrl) {
-          spriteUrl = dexEntry.spriteUrl;
-        }
+      if (zone === "party") rest.splice(index, 0, dragged);
+      else if (zone === "storage") rest.splice(6 + index, 0, dragged);
 
-        // ✅ Fallback if sprite URL missing
-        if (!spriteUrl) {
-          const id = await getPokeIdByName(name.toLowerCase());
-          spriteUrl = `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${id}.png`;
-        }
+      const rebuilt = {};
+      for (const [id, data] of rest) rebuilt[id] = data;
+      setObj(STORAGE.party, rebuilt);
 
-        // ✅ Set image source from pokedex or fallback
-        img.src = spriteUrl || "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/poke-ball.png";
-        img.style.width = "40px";
+      // make first Pokémon active
+      const first = Object.entries(rebuilt)[0];
+      if (first) {
+        const [fid, fdata] = first;
+        GM_setValue("pkm_starter_id", fid);
+        setStr(STORAGE.starter, fdata.name);
+        changePokemon(fid);
+      }
 
-        // ✅ Mark shiny if the sprite URL contains 'shiny'
-        const isShiny = spriteUrl.includes("/shiny/");
-        if (isShiny) {
-          img.title = "✨ Shiny Pokémon!";
-        }
+      // 💥 FULL refresh from storage
+      setTimeout(() => {
+        drawBagSorted(sortBy);
+        renderHeader();
+        
+      }, 0);
+    }
 
-        const lbl = document.createElement("span");
-        lbl.textContent = `${name} x${count}`;
+    // === Party grid ===
+    const partyGrid = document.createElement("div");
+    partyGrid.className = "party-grid";
+    for (let i = 0; i < 6; i++) partyGrid.appendChild(makeSlot(partyEntries[i], i, "party"));
+    container.appendChild(partyGrid);
 
-        const rarity = getRarity(name);
-        const stats = getStats(name);
-        const level = stats.level || 1;
+    const tip = document.createElement("div");
+    tip.className = "tiny muted";
+    tip.textContent = "Drag between Party ↔ Storage to move Pokémon.";
+    container.appendChild(tip);
 
-        const baseValues = {
-          common: 2,
-          uncommon: 5,
-          rare: 10,
-          legendary: 20,
-        };
+    const sep = document.createElement("hr");
+    sep.className = "sep";
+    container.appendChild(sep);
 
-        const value = baseValues[rarity] * (level + 1);
+    // === Storage grid ===
+    const storageGrid = document.createElement("div");
+    storageGrid.className = "storage-grid";
+    for (let i = 0; i < 30; i++) storageGrid.appendChild(makeSlot(storageEntries[i], i, "storage"));
+    container.appendChild(storageGrid);
 
-        // ✅ Set Active button
-        const btnSet = createButton("Set Active", () => {
-          const oldStarter = getStr(STORAGE.starter);
-          if (oldStarter && oldStarter !== name) {
-            const party = getObj(STORAGE.party);
-            const oldName = oldStarter.toLowerCase();
-            party[oldName] = (party[oldName] || 0) + 1;
+    const closeBtn = createButton("❌ Close", closeBag);
+    closeBtn.style.marginTop = "10px";
+    container.appendChild(closeBtn);
 
-            if (--party[name] <= 0) delete party[name];
-            setObj(STORAGE.party, party);
-          }
+    bagWrap.appendChild(container);
 
-          setStr(STORAGE.starter, name);
-          fetchPartner(name);
-          renderHeader();
-        });
+    // ensure starter
+    const first = Object.entries(getObj(STORAGE.party) || {})[0];
+    if (first) {
+      const [fid, fdata] = first;
+      GM_setValue("pkm_starter_id", fid);
+      setStr(STORAGE.starter, fdata.name);
+    }
+  }
 
-        // ✅ Sell button
-        const btnSell = createButton(`Sell (${value}c)`, () => {
-          const p = getObj(STORAGE.party);
-          if (--p[name] <= 0) delete p[name];
-          setObj(STORAGE.party, p);
-          setInt(STORAGE.coins, getInt(STORAGE.coins) + value);
-          drawBagSorted(sortBy, `${name} sold for ${value} coins.`);
-        });
+  // --- Unique IDs --------------------------------------------------------------
+  function generateUniqueId(baseName) {
+    const base = String(baseName || "").toLowerCase().replace(/[^a-z0-9-]/g, "");
+    const t = Date.now().toString(36);
+    const r = Math.floor(Math.random() * 1e6).toString(36);
+    return `${base}_${t}_${r}`;
+  }
 
-        const controls = document.createElement("div");
-        controls.appendChild(btnSet);
-        controls.appendChild(btnSell);
+  // (Optional) where to remember the exact active instance
+  const STARTER_ID_KEY = "pkm_starter_id";
 
-        const left = document.createElement("div");
-        left.style.display = "flex";
-        left.style.alignItems = "center";
-        left.style.gap = "6px";
-        left.appendChild(img);
-        left.appendChild(lbl);
+  // --- Instance-aware Stats ----------------------------------------------------
+  // Stats per unique instance (fallback to species-by-name if not present)
+  function getStatsForInstance(id, speciesName) {
+    const all = getObj(STORAGE.stats);
+    if (all[id]) return all[id];
+    // fallback to species stats, then clone into instance key
+    const base = getStats(speciesName);
+    all[id] = { ...base };
+    setObj(STORAGE.stats, all);
+    return all[id];
+  }
 
-        row.append(left, controls);
-        container.appendChild(row);
+  function setStatsForInstance(id, stats) {
+    const all = getObj(STORAGE.stats);
+    all[id] = stats;
+    setObj(STORAGE.stats, all);
+  }
+
+  function listDuplicateIds() {
+    const party = getObj(STORAGE.party) || {};
+    const nameCount = {};
+    for (const id in party) {
+      const name = party[id].name;
+      nameCount[name] = (nameCount[name] || 0) + 1;
+    }
+    console.log("📜 Pokémon counts:", nameCount);
+  }
+  function migrateLegacyStarter() {
+    const starter = getStr(STORAGE.starter);
+    const starterId = GM_getValue("pkm_starter_id");
+    const party = getObj(STORAGE.party);
+
+    if (!starter || !Array.isArray(party)) return;
+
+    // If no ID yet, link the first matching Pokémon instance
+    if (!starterId) {
+      const found = party.find(p => p.name.toLowerCase() === starter.toLowerCase());
+      if (found) {
+        GM_setValue("pkm_starter_id", found.id);
+        console.log(`🧬 Migrated starter ${starter} → ${found.id}`);
+      } else {
+        console.warn(`⚠️ Starter ${starter} not found in party.`);
+      }
+    }
+  }
+
+
+
+  async function migratePartyToInstancesIfNeeded() {
+    const party = getObj(STORAGE.party);
+    if (!party || typeof party !== "object") return;
+
+    const alreadyInstance =
+      Array.isArray(party) ||
+      Object.values(party).some(v => v && typeof v === "object" && v.name && v.caughtAt);
+    if (alreadyInstance) {
+      console.log("🟢 Party already in instance format.");
+      return;
+    }
+
+    console.log("⚙️ Migrating legacy party → instance format...");
+    const newParty = {};
+    const oldStats = getObj(STORAGE.stats) || {};
+    const newStats = { ...oldStats };
+
+    for (const [speciesName, count] of Object.entries(party)) {
+      const qty = Math.max(0, parseInt(count, 10) || 0);
+      for (let i = 0; i < qty; i++) {
+        const id = generateUniqueId(speciesName);
+        newParty[id] = { name: speciesName, caughtAt: Date.now() + i };
+        const base = getStats(speciesName) || { level: 1, xp: 0, hp: 100, atk: 15 };
+        newStats[id] = { ...base };
       }
     }
 
-    bagPanel.innerHTML = "<strong>Your Pokémon Bag:</strong><br>";
-    bagPanel.appendChild(container);
-    const closeBtn = createButton("❌ Close", closeBag);
-    closeBtn.style.marginTop = "10px";
-    bagPanel.appendChild(closeBtn);
+    // ✅ Ensure legacy starter (pignite) exists in new party
+    const oldStarter = getStr(STORAGE.starter);
+    if (oldStarter && !Object.values(newParty).some(p => p.name?.toLowerCase() === oldStarter.toLowerCase())) {
+      const id = generateUniqueId(oldStarter);
+      newParty[id] = { name: oldStarter, caughtAt: Date.now() };
+      const base = getStats(oldStarter) || { level: 1, xp: 0, hp: 100, atk: 15 };
+      newStats[id] = { ...base };
+      GM_setValue("pkm_starter_id", id);
+      console.log(`🔥 Added missing legacy starter '${oldStarter}' → ${id}`);
+    }
+
+    // ✅ Commit migration
+    setObj(STORAGE.party, newParty);
+    setObj(STORAGE.stats, newStats);
+    console.log("✅ Party migrated to instance format:", newParty);
+
+    // ✅ Fallback: choose first Pokémon if none linked
+    let starterId = GM_getValue("pkm_starter_id");
+    if (!starterId && Object.keys(newParty).length > 0) {
+      const firstId = Object.keys(newParty)[0];
+      GM_setValue("pkm_starter_id", firstId);
+      setStr(STORAGE.starter, newParty[firstId].name);
+      console.log(`🌟 Auto-selected starter '${newParty[firstId].name}' (${firstId})`);
+    }
   }
+
+
+
 
 
   function closeBag() {
@@ -3430,8 +3856,37 @@ button .badge.bg-danger {
   }, 1000);
 
 
-  unsafeWindow.changePokemon = (name) => {
+  unsafeWindow.changePokemon = (identifier) => {
+    const party = getObj(STORAGE.party) || {};
+    let id = identifier;
+    let name = null;
+
+    // 🧩 If called with a name instead of an ID, find the first match
+    if (!party[id]) {
+      const found = Object.entries(party).find(
+        ([, entry]) => entry.name.toLowerCase() === identifier.toLowerCase()
+      );
+      if (found) {
+        id = found[0];
+        name = found[1].name;
+      } else {
+        name = identifier;
+      }
+    } else {
+      name = party[id].name;
+    }
+
+    if (!name) {
+      console.warn(`⚠️ changePokemon: Could not find Pokémon "${identifier}".`);
+      return;
+    }
+
+    // ✅ Save current active Pokémon
+    GM_setValue("pkm_starter_id", id);
     GM_setValue(STORAGE.starter, name);
-    fetchPartner(name);
+
+    // ✅ Fetch and refresh HUD for this instance
+    fetchPartner(id);
   };
+
 })();
