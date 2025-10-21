@@ -1334,24 +1334,22 @@ button .badge.bg-danger { animation: pulseBadge 1.2s infinite; position: relativ
       // ❌ No Pokémon found — show empty UI
       stats = { xp: 0, level: 1, hp: 100, atk: 15, currentHP: 100 };
     }
-
-    // --- Safe defaults and clamping ---
-    let lvl = 0;
-    if(stats > MAX_LEVEL) {
-      lvl = MAX_LEVEL;
-    } else if(stats.level < 1) {
-      lvl = 1;
-    } else {
-      lvl = Math.max(1, stats.level ?? 1);
+    function getMaxLevel(currentLevel) {
+      return Math.min(MAX_LEVEL, currentLevel || 1);
     }
-    const xp = stats.xp ?? 0;
+    // --- Safe defaults and clamping ---
+    const lvl = Math.max(1, getMaxLevel(stats.level) ?? 1);
+    
+    let xp = stats.xp ?? 0;
     const maxHp = Math.max(1, stats.hp ?? 100);
     const curHp = Math.min(maxHp, stats.currentHP ?? maxHp);
     const atk = stats.atk ?? 15;
 
     // ✅ Prevent NaN in progress calculations
-    const { need: nextXp, pct: xpPct } = xpProgress(lvl, xp);
-
+    let { need: nextXp, pct: xpPct } = xpProgress(lvl, xp);
+    if(lvl >= MAX_LEVEL) {
+      xp = nextXp;
+    }
     // --- Top row: Partner name + bars ---
     const topRow = document.createElement("div");
     Object.assign(topRow.style, {
