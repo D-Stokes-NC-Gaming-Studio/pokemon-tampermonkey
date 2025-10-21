@@ -271,7 +271,7 @@ button .badge.bg-danger { animation: pulseBadge 1.2s infinite; position: relativ
       if (!GM_getValue(this.STORAGE.ultraBalls)) this.setInt(this.STORAGE.ultraBalls, 0);
       if (!GM_getValue(this.STORAGE.masterBalls)) this.setInt(this.STORAGE.masterBalls, 0);
       if (!GM_getValue(this.STORAGE.pokestopCooldown))
-        setInt(this.STORAGE.pokestopCooldown, 0);
+        this.setInt(this.STORAGE.pokestopCooldown, 0);
       if (!GM_getValue(this.STORAGE.pokedex)) this.setArr(this.STORAGE.pokedex, []);
       if (!GM_getValue(this.STORAGE.party)) {
         this.setObj(this.STORAGE.party, {});
