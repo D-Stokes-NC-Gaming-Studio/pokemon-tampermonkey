@@ -4,7 +4,7 @@
 // @connect     pokeapi.co
 // @connect     https://dstokesncstudio.com/pokeapi/pokeapi.php
 // @namespace   dstokesncstudio.com
-// @version     3.0.0.4
+// @version     3.0.0.5
 // @description Full version with XP, evolution, stats, sound, shop, battles, and walking partner — persistent across sites.
 // @include     *
 // @grant       GM.xmlHttpRequest
@@ -1058,7 +1058,107 @@ button .badge.bg-danger { animation: pulseBadge 1.2s infinite; position: relativ
 
     return btn;
   }
+  const XP_CURVE = "smooth";     // 'linear' | 'smooth' | 'fast' | 'slow' | 'mediumFast'
+  const XP_SCALE = 25;           // global multiplier (raise to require more XP)
+  function xpThreshold(level) {
+    const L = Math.max(1, (level | 0));
 
+    switch (XP_CURVE) {
+      case "linear":
+        // ~ your old 50 + 25*L
+        return Math.max(1, 50 + 25 * L);
+
+      case "fast":
+        // gentler growth
+        return Math.max(1, Math.round(30 + XP_SCALE * Math.pow(L, 1.20)));
+
+      case "slow":
+        // steeper growth
+        return Math.max(1, Math.round(60 + XP_SCALE * Math.pow(L, 1.60)));
+
+      case "mediumFast":
+        // Pokémon-style "medium fast": total XP ≈ n^3. Per-level increment is Δ(n^3) = 3n^2+3n+1.
+        // Scaled so numbers stay in your existing range.
+        return Math.max(1, Math.round((3 * L * L + 3 * L + 1) * (XP_SCALE / 2)));
+
+      case "smooth":
+      default:
+        // Nice S-curve feel; default
+        return Math.max(1, Math.round(40 + XP_SCALE * Math.pow(L, 1.40)));
+    }
+  }
+
+  /** Progress helper for HUD bars (level-local). */
+  function xpProgress(level, xpInLevel) {
+    const need = xpThreshold(level);
+    const have = Math.max(0, Math.min(need, Number(xpInLevel) || 0));
+    const pct = Math.min(100, Math.round((have / need) * 100));
+    return { need, have, pct };
+  }
+  function addXP(name, amount, { autoLevel = true } = {}) {
+    const key = String(name || "").toLowerCase();
+    const s = getStats(key) || { xp: 0, level: 1, hp: 100, atk: 15, currentHP: 100 };
+    let gained = Math.max(0, Number(amount) || 0);
+    let leveled = 0;
+    let leveledUp = false;
+    if (!gained) return { leveled: 0, newLevel: s.level, xpInLevel: s.xp, need: xpThreshold(s.level) };
+
+    s.xp = Math.max(0, Number(s.xp) || 0);
+
+    if (autoLevel) {
+      while (gained > 0) {
+        const need = xpThreshold(s.level);
+        const space = Math.max(0, need - s.xp);
+
+        if (gained < space) {
+          s.xp += gained;
+          gained = 0;
+          break;
+        }
+
+        // Fill current level, level up, carry over remainder
+        s.xp += space;
+        gained -= space;
+
+        // Level up
+        s.level += 1;
+        leveled += 1;
+        leveledUp = true;
+        s.xp = 0;
+
+        // Optional: tiny stat bumps per level (tune or remove)
+        s.hp = Math.round((s.hp || 100) * 1.04);
+        s.atk = Math.round((s.atk || 15) * 1.03);
+        s.currentHP = Math.min(s.hp, s.currentHP == null ? s.hp : s.currentHP + Math.ceil(s.hp * 0.25));
+        alert(
+          `🎉 ${partnerName} leveled up to ${s.level}! HP and ATK increased.`
+        );
+        if (leveledUp) evolvePartner();
+
+      }
+    } else {
+      const need = xpThreshold(s.level);
+      s.xp = Math.min(need, s.xp + gained);
+      gained = 0;
+    }
+
+    setStats(key, s);
+    const prog = xpProgress(s.level, s.xp);
+    updateHeaderHP();
+    return { leveled, newLevel: s.level, xpInLevel: s.xp, need: prog.need, pct: prog.pct };
+  }
+
+  /** Set a Pokémon's XP to the maximum for its current level (fills the bar). */
+  function setXPToMax(name) {
+    const key = String(name || "").toLowerCase();
+    const s = getStats(key);
+    if (!s) return 0;
+    const need = xpThreshold(s.level);
+    const before = Number(s.xp) || 0;
+    s.xp = need;
+    setStats(key, s);
+    return Math.max(0, need - before); // amount filled
+  }
   async function renderHeader() {
     const root = wrap.querySelector("[data-hud-body]") || wrap;
     root.innerHTML = "";
@@ -1073,7 +1173,7 @@ button .badge.bg-danger { animation: pulseBadge 1.2s infinite; position: relativ
     const hp = stats.hp;
     const maxHp = hp;
     const curHp = stats.currentHP != null ? stats.currentHP : maxHp;
-    const nextXp = lvl * 100;
+    const { need: nextXp, pct: xpPct } = xpProgress(lvl, xp);
     console.log(stats.currentHP);
     // --- Top row: Partner name + bars ---
     const topRow = document.createElement("div");
@@ -1129,8 +1229,11 @@ button .badge.bg-danger { animation: pulseBadge 1.2s infinite; position: relativ
     xpWrapper.style.display = "flex";
     xpWrapper.style.flexDirection = "column";
     const xpLabel = document.createElement("small");
+    xpLabel.id = "pkm-xp-label";
+
+    // ✅ Update label
     xpLabel.textContent = `XP: ${xp}/${nextXp}`;
-    const xpPct = Math.round((xp / nextXp) * 100);
+
     const xpBar = document.createElement("div");
     xpBar.className = "progress";
     xpBar.style.width = "120px";
@@ -1369,86 +1472,162 @@ button .badge.bg-danger { animation: pulseBadge 1.2s infinite; position: relativ
       scheduleRandomBattle(); // Schedule next
     }, delay);
   }
-  async function fetchPartner(name) {
-    if (!name) return;
+async function fetchPartner(name) {
+  if (!name) return;
 
-    starterName = name;
-    partnerName = name[0].toUpperCase() + name.slice(1);
+  starterName = name;
+  partnerName = name[0].toUpperCase() + name.slice(1);
 
-    // ✅ Normalize name for lookups
-    const rawName = name.toLowerCase().replace("shiny ", "");
-    const fixedName = SPRITE_NAME_FIXES[rawName] || rawName;
+  // Normalize and fix form names
+  const rawName = name.toLowerCase().replace("shiny ", "");
+  const fixedName = SPRITE_NAME_FIXES[rawName] || rawName;
 
-    // ✅ Check if this Pokémon is already in the Pokédex
-    const pokedex = getArr(STORAGE.pokedex);
-    let dexEntry = pokedex.find((p) => p.name.toLowerCase() === fixedName);
+  // Try to find Pokédex entry
+  const pokedex = getArr(STORAGE.pokedex);
+  let dexEntry = pokedex.find((p) => p.name.toLowerCase() === fixedName);
 
-    // ✅ If already recorded, use its sprite directly
-    if (dexEntry && dexEntry.spriteUrl) {
-      partnerSpriteUrl = dexEntry.spriteUrl;
-    } else {
-      // ✅ Choose the best fallback sprite (animated > shiny > static)
-      const showdownGif = `https://play.pokemonshowdown.com/sprites/ani/${fixedName}.gif`;
-      const bwGif = `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/versions/generation-v/black-white/animated/${fixedName}.gif`;
-      const staticPng = `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${fixedName}.png`;
+  // Use saved sprite if exists
+  if (dexEntry?.spriteUrl) {
+    partnerSpriteUrl = dexEntry.spriteUrl;
+  } else {
+    const showdownGif = `https://play.pokemonshowdown.com/sprites/ani/${fixedName}.gif`;
+    const bwGif = `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/versions/generation-v/black-white/animated/${fixedName}.gif`;
+    const staticPng = `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${fixedName}.png`;
 
-      // We’ll assign this now, and override later if API gives a better URL
-      partnerSpriteUrl = showdownGif;
-      if (!(await imageExists(showdownGif))) {
-        partnerSpriteUrl = (await imageExists(bwGif)) ? bwGif : staticPng;
-      }
+    partnerSpriteUrl = showdownGif;
+    if (!(await imageExists(showdownGif))) {
+      partnerSpriteUrl = (await imageExists(bwGif)) ? bwGif : staticPng;
+    }
+  }
 
-      // ✅ Fetch from API to build Pokédex entry if not saved yet
-      await new Promise((resolve) => {
-        GM.xmlHttpRequest({
-          method: "GET",
-          url: `https://pokeapi.co/api/v2/pokemon/${encodeURIComponent(fixedName)}`,
-          onload: async (res) => {
-            try {
-              const d = JSON.parse(res.responseText);
-              const entry = {
-                id: d.id,
-                name: d.name[0].toUpperCase() + d.name.slice(1),
-                spriteUrl: d.sprites.front_default || partnerSpriteUrl,
-                types: d.types.map((t) => t.type.name),
-                abilities: d.abilities.map((a) => a.ability.name),
-                stats: d.stats.map((s) => ({
-                  name: s.stat.name,
-                  value: s.base_stat,
-                })),
-                hp: d.stats.find((s) => s.stat.name === "hp").base_stat,
-                level: 1,
-                xp: 0,
-                currentHP: d.stats.find((s) => s.stat.name === "hp").base_stat,
-              };
+  // ✅ Fetch data from PokéAPI
+  await new Promise((resolve) => {
+    GM.xmlHttpRequest({
+      method: "GET",
+      url: `https://pokeapi.co/api/v2/pokemon/${encodeURIComponent(fixedName)}`,
+      onload: async (res) => {
+        try {
+          const d = JSON.parse(res.responseText);
 
-              await recordPokedex(entry);
-              dexEntry = entry;
-              partnerSpriteUrl = entry.spriteUrl;
-            } catch (err) {
-              console.error("Failed to parse PokéAPI:", err);
+          // --- Build new stat data from API ---
+          const newStats = {
+            hp: d.stats.find((s) => s.stat.name === "hp")?.base_stat,
+            atk: d.stats.find((s) => s.stat.name === "attack")?.base_stat,
+            def: d.stats.find((s) => s.stat.name === "defense")?.base_stat,
+            spAtk: d.stats.find((s) => s.stat.name === "special-attack")?.base_stat,
+            spDef: d.stats.find((s) => s.stat.name === "special-defense")?.base_stat,
+            speed: d.stats.find((s) => s.stat.name === "speed")?.base_stat,
+            types: d.types.map((t) => t.type.name),
+            abilities: d.abilities.map((a) => a.ability.name),
+          };
+
+          // ✅ Merge: keep *all existing* stats, only update new ones if missing
+          const existingStats = getStats(name);
+          const mergedStats = { ...existingStats };
+
+          for (const key in newStats) {
+            if (newStats[key] !== undefined && newStats[key] !== null) {
+              // ✅ Only update if missing or outdated
+              mergedStats[key] = newStats[key];
             }
-            resolve();
-          },
-          onerror: (err) => {
-            console.error("Failed to fetch partner from PokéAPI:", err);
-            resolve();
-          },
-        });
-      });
+          }
+
+          // ✅ Keep or clamp currentHP
+          if (mergedStats.hp !== undefined) {
+            if (mergedStats.currentHP == null) {
+              mergedStats.currentHP = mergedStats.hp;
+            } else {
+              mergedStats.currentHP = Math.min(
+                mergedStats.hp,
+                mergedStats.currentHP
+              );
+            }
+          }
+
+          // ✅ Save back into storage (preserving everything else)
+          setStats(name, mergedStats);
+          console.log(`✅ Stats merged for ${name}:`, mergedStats);
+
+          // --- Update Pokédex entry ---
+          const entry = {
+            id: d.id,
+            name: d.name[0].toUpperCase() + d.name.slice(1),
+            spriteUrl: d.sprites.front_default || partnerSpriteUrl,
+            types: newStats.types,
+            abilities: newStats.abilities,
+            stats: d.stats.map((s) => ({
+              name: s.stat.name,
+              value: s.base_stat,
+            })),
+            hp: newStats.hp,
+            level: mergedStats.level || 1,
+            xp: mergedStats.xp || 0,
+            currentHP: mergedStats.currentHP,
+          };
+
+          await recordPokedex(entry);
+          dexEntry = entry;
+          partnerSpriteUrl = entry.spriteUrl;
+        } catch (err) {
+          console.error("❌ Failed to parse PokéAPI:", err);
+        }
+        resolve();
+      },
+      onerror: (err) => {
+        console.error("❌ Failed to fetch partner:", err);
+        resolve();
+      },
+    });
+  });
+
+  // ✅ Render AFTER stats are updated
+  renderHeader();
+  spawnWalkingSprite(partnerSpriteUrl);
+}
+
+
+  function extractStatsFromPokeApi(d) {
+    if (!d || !Array.isArray(d.stats)) return {};
+
+    const get = (n) => {
+      const v = d.stats.find(s => s?.stat?.name === n)?.base_stat;
+      return Number.isFinite(v) ? Number(v) : undefined;
+    };
+
+    const partial = {};
+    if (get("hp") !== undefined) partial.hp = get("hp");
+    if (get("attack") !== undefined) partial.atk = get("attack");
+    if (get("defense") !== undefined) partial.def = get("defense");
+    if (get("special-attack") !== undefined) partial.spAtk = get("special-attack");
+    if (get("special-defense") !== undefined) partial.spDef = get("special-defense");
+    if (get("speed") !== undefined) partial.speed = get("speed");
+
+    // optional extras
+    if (d.types) partial.types = d.types.map(t => t.type.name);
+    if (d.abilities) partial.abilities = d.abilities.map(a => a.ability.name);
+
+    return partial; // may be empty if API had nothing
+  }
+
+  function mergeStatsPartial(name, partial) {
+    const key = String(name || "").toLowerCase();
+    const old = getStats(key) || { level: 1, xp: 0, hp: 100, atk: 15, currentHP: 100 };
+
+    const out = { ...old };
+
+    // Only replace values if present in partial
+    for (const k of Object.keys(partial)) {
+      out[k] = partial[k];
     }
 
-    // ✅ Update or initialize stats
-    const stats = getStats(name) || {};
-    if (stats.hp == null || stats.currentHP == null) {
-      stats.hp = dexEntry?.hp || stats.hp || 100;
-      stats.currentHP = dexEntry?.currentHP || stats.hp;
+    // Clamp currentHP if hp changed
+    if (partial.hp !== undefined) {
+      if (out.currentHP == null) out.currentHP = out.hp;
+      out.currentHP = Math.min(out.hp, out.currentHP);
     }
-    setStats(name, stats);
 
-    // ✅ Final render and walking sprite
-    renderHeader();
-    spawnWalkingSprite(partnerSpriteUrl);
+    setStats(key, out);
+    return out;
   }
 
   function imageExists(url) {
@@ -1983,8 +2162,12 @@ button .badge.bg-danger {
             ) {
               const requiredLevel = evoDetails.min_level;
 
-              if (stats.level >= requiredLevel) {
+              if (stats.level === requiredLevel) {
                 const oldStats = getStats(starterName);
+                oldStats.atk += 10;
+                oldStats.hp += math.floor(oldStats.hp * 0.2);
+                oldStats.currentHP = oldStats.hp;
+
                 setStr(STORAGE.starter, nextName);
                 fetchPartner(nextName);
                 setStats(nextName, { ...oldStats });
@@ -2522,7 +2705,10 @@ button .badge.bg-danger {
     }
 
     setInt(STORAGE.coins, getInt(STORAGE.coins) + reward);
-    gainXP(Math.floor(xp));
+    //gainXP(Math.floor(xp));
+    console.log(`Gained ${Math.floor(xp)} XP for winning battle.`);
+    addXP(starterName, Math.floor(xp));
+
     SOUNDS.battleSound.pause();
     SOUNDS.battleSound.currentTime = 0;
     playSound("victory");
