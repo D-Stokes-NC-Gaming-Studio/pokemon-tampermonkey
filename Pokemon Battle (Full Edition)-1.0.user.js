@@ -12,8 +12,9 @@
 // @grant       GM_getValue
 // @grant       GM_setValue
 // @grant       GM_xmlhttpRequest
-// @connect      github.com
-// @connect      raw.githubusercontent.com
+// @grant       GM_addStyle
+// @connect     github.com
+// @connect     raw.githubusercontent.com
 // ==/UserScript==
 /*
 How to use the request:
@@ -35,6 +36,37 @@ GM.xmlHttpRequest({
 
 (function () {
   "use strict";
+  GM_addStyle(`
+/* (keep your existing animations & small styles you had) */
+@keyframes pulseBadge { 0%,100%{ transform: translateY(-50%) scale(1) } 50%{ transform: translateY(-50%) scale(1.15) } }
+button .badge.bg-danger { animation: pulseBadge 1.2s infinite; position: relative; top: -2px; margin-left: 6px; }
+@keyframes shake { 0%{transform:translate(1px,0)}25%{transform:translate(-1px,0)}50%{transform:translate(2px,0)}75%{transform:translate(-2px,0)}100%{transform:translate(1px,0)} }
+@keyframes flash { 0%,100%{opacity:1} 50%{opacity:0} }
+@keyframes bobWalk { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-3px)} }
+#pkm-partner-sprite { transform-origin:center; }
+.pixel-frame{border:24px solid transparent;border-image:url('https://raw.githubusercontent.com/D-Stokes-NC-Gaming-Studio/pokemon-tampermonkey/refs/heads/main/Windowskins/choice%20ug.png') 23 stretch;width:280px;margin:auto;padding:16px;color:#fff;box-sizing:content-box}
+
+/* ===== Pokédex styles (Firefox extension look) ===== */
+.dex-title{font-size:1.1rem;margin:0 0 8px 0}
+.dex-search{width:100%;padding:8px;border-radius:8px;border:1px solid #2b2b3d;background:#10101a;color:#fff;outline:none;margin-bottom:10px}
+.dex-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;max-height:60vh;overflow-y:auto;padding-right:2px}
+.dex-entry{position:relative;background:#1a1a2a;border:1px solid #2b2b3d;border-radius:12px;padding:12px;text-align:center;color:#e9e7ff;transition:transform .15s ease, box-shadow .15s ease}
+.dex-entry:hover{transform:translateY(-2px);box-shadow:0 6px 16px rgba(0,0,0,.35)}
+.dex-entry.owned{border-color:#3c7cff}
+.dex-number{font-size:.85rem;opacity:.7;margin-bottom:4px;text-align:left}
+.dex-sprite img{width:64px;height:64px;image-rendering:pixelated;filter:drop-shadow(0 0 6px rgba(255,255,255,.2))}
+.dex-name{margin-top:6px;font-weight:700;letter-spacing:.3px}
+
+/* Detail panel */
+.pokedex-detail{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:#1e1e2f;color:#fff;padding:20px 16px 16px;border:2px solid #ff4b4b;border-radius:14px;width:320px;z-index:11000;max-height:80vh;overflow-y:auto;box-shadow:0 0 24px rgba(255,75,75,.35)}
+.detail-close{position:absolute;top:6px;right:8px;background:transparent;border:none;color:#fff;font-size:18px;cursor:pointer}
+.detail-title{margin:0 0 8px 0}
+.detail-title small{opacity:.8;font-weight:400}
+.detail-sprite{display:block;margin:8px auto;width:96px;height:96px;image-rendering:pixelated}
+.detail-section{background:#141428;border:1px solid #2b2b3d;border-radius:10px;padding:8px;margin:8px 0;line-height:1.5}
+.detail-stats{width:100%;border-collapse:collapse;margin-top:6px}
+.detail-stats th,.detail-stats td{padding:6px;border-bottom:1px solid rgba(255,255,255,.15);text-align:left}
+`);
   // 🔥 --- Custom Pokemon Logger (paste the whole code here) ---
   (function attachPokemonLogger(global = window) {
     const LEVELS = ["debug", "log", "info", "warn", "error"];
@@ -775,42 +807,81 @@ GM.xmlHttpRequest({
       return new Pokedex(raw);
     }
     render(container) {
-      container.innerHTML = "";
-      container.appendChild(
-        Object.assign(document.createElement("h5"), {
-          textContent: "Your Pokédex",
-        })
-      );
-      const table = document.createElement("table");
-      table.className = "table table-sm table-dark";
-      table.innerHTML = `
-      <thead>
-        <tr><th></th><th>#</th><th>Name</th><th>Types</th></tr>
-      </thead>
-      <tbody>
-        ${this.entries
-          .map(
-            (e) => `
-          <tr style="cursor:pointer">
-            <td><img src="${e.spriteUrl}" width="32"></td>
-            <td>${e.id}</td>
-            <td>${e.name}</td>
-            <td>${e.types.join(", ")}</td>
-          </tr>
-        `
-          )
-          .join("")}
-      </tbody>
-    `;
-      container.appendChild(table);
-      // wire up row clicks
-      Array.from(table.tBodies[0].rows).forEach((row, i) => {
-        row.onclick = () => openDetail(this.entries[i]);
-      });
-      container.appendChild(
-        createButton("Close Pokédex", closePokedex, "btn btn-light mt-2")
+      container.innerHTML = `
+    <h2 class="dex-title">Pokédex</h2>
+    <input type="text" id="dexSearch" placeholder="Search name or #..." class="dex-search" />
+    <div class="dex-grid"></div>
+    <div class="dex-footer"></div>
+  `;
+
+      const dexGrid = container.querySelector(".dex-grid");
+      const owned = new Set(this.entries.map(e => e.name.toLowerCase()));
+
+      fetch("https://pokeapi.co/api/v2/pokemon?limit=1010")
+        .then(res => res.json())
+        .then(data => {
+          data.results.forEach((poke, index) => {
+            const name = poke.name;
+            const ownedEntry = this.entries.find(e => e.name.toLowerCase() === name);
+            const isOwned = !!ownedEntry;
+
+            const sprite = isOwned
+              ? ownedEntry.spriteUrl
+              : "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/poke-ball.png";
+
+            const card = document.createElement("div");
+            card.className = "dex-entry";
+            card.innerHTML = `
+          <div class="dex-number">#${index + 1}</div>
+          <div class="dex-sprite"><img src="${sprite}" alt="${isOwned ? ownedEntry.name : "unknown"}"/></div>
+          <div class="dex-name">${isOwned ? ownedEntry.name : "???????"}</div>
+        `;
+            if (isOwned) {
+              card.onclick = () => openDetail(ownedEntry);
+              card.classList.add("owned");
+            } else {
+              card.onclick = () => alert("You haven't discovered this Pokémon yet!");
+            }
+            dexGrid.appendChild(card);
+          });
+
+          // live search
+          container.querySelector("#dexSearch").addEventListener("input", e => {
+            const q = e.target.value.toLowerCase();
+            for (const card of dexGrid.children) {
+              const name = card.querySelector(".dex-name").textContent.toLowerCase();
+              const num = card.querySelector(".dex-number").textContent.toLowerCase();
+              card.style.display = (name.includes(q) || num.includes(q)) ? "" : "none";
+            }
+          });
+        });
+
+      container.querySelector(".dex-footer").appendChild(
+        createButton("Close Pokédex", closePokedex, "btn btn-light mt-3 w-100")
       );
     }
+
+
+    getOwnedCount() {
+      return this.entries.length;
+    }
+
+    getCompletionRate(total = 1010) {
+      return ((this.getOwnedCount() / total) * 100).toFixed(2) + "%";
+    }
+
+    hasPokemon(name) {
+      return this.entries.some(e => e.name.toLowerCase() === name.toLowerCase());
+    }
+
+    getEntry(name) {
+      return this.entries.find(e => e.name.toLowerCase() === name.toLowerCase()) || null;
+    }
+
+    listAllOwned() {
+      return this.entries.map(e => e.name);
+    }
+
   }
 
   // panel handle
@@ -828,8 +899,8 @@ GM.xmlHttpRequest({
       padding: "12px",
       border: "2px solid #fff",
       zIndex: 10000,
-      width: "300px",
-      maxHeight: "80vh",
+      width: "600px",
+      height: "600px",
       overflowY: "auto",
     });
     document.body.appendChild(pokedexPanel);
@@ -1060,22 +1131,25 @@ GM.xmlHttpRequest({
     let timerStr = "";
     if (nextBattleTime && randomBattleEnabled) {
       const d = Math.max(0, nextBattleTime - Date.now());
-      timerStr += ` | Next Battle: ${Math.floor(d / 60000)}m ${Math.floor(
+      timerStr += ` | <span id="nextBattleStatus">Next Battle: ${Math.floor(d / 60000)}m ${Math.floor(
         (d % 60000) / 1000
-      )}s`;
+      )}s</span>`;
+    } else {
+      timerStr += ` | <span id="nextBattleStatus">Next Battle: —</span>`;
     }
     const psCd = getInt(STORAGE.pokestopCooldown);
     if (psCd > Date.now()) {
       const r = psCd - Date.now();
-      timerStr += ` | PokéStop: ${Math.floor(r / 60000)}m ${Math.floor(
+      timerStr += ` | <span id="pokeStopStatus">PokéStop: ${Math.floor(r / 60000)}m ${Math.floor(
         (r % 60000) / 1000
-      )}s`;
+      )}s</span>`;
     } else {
-      timerStr += ` | PokéStop: Ready!`;
+      timerStr += ` | <span id="pokeStopStatus">PokéStop: Ready!</span>`;
     }
-    status.textContent = `Coins: ${getInt(STORAGE.coins)} | Balls: ${getInt(
+    status.innerHTML = `Coins: ${getInt(STORAGE.coins)} | Balls: ${getInt(
       STORAGE.balls
     )} | Potions: ${getInt(STORAGE.potions)}${timerStr}`;
+
     root.appendChild(status);
 
     // --- Buttons row ---
@@ -1129,6 +1203,9 @@ GM.xmlHttpRequest({
     })();
 
     root.appendChild(row);
+    updatePokeStopTimer();
+    updateNextBattleTimer();
+
   }
 
   // --- Partner setup ---
@@ -1140,115 +1217,67 @@ GM.xmlHttpRequest({
       setTimeout(openStarter, 300);
     }
   }
+  function updatePokeStopTimer() {
+    const status = document.querySelector("#pokeStopStatus");
+    if (!status) return;
+
+    const psCd = getInt(STORAGE.pokestopCooldown);
+    let text = "";
+    if (psCd > Date.now()) {
+      const r = psCd - Date.now();
+      text = `PokéStop: ${Math.floor(r / 60000)}m ${Math.floor((r % 60000) / 1000)}s`;
+    } else {
+      text = "PokéStop: Ready!";
+    }
+    status.textContent = text;
+  }
+  function updateNextBattleTimer() {
+    const el = document.querySelector("#nextBattleStatus");
+    if (!el) return;
+
+    if (randomBattleEnabled && nextBattleTime) {
+      const d = Math.max(0, nextBattleTime - Date.now());
+      el.textContent = `Next Battle: ${Math.floor(d / 60000)}m ${Math.floor((d % 60000) / 1000)}s`;
+    } else {
+      el.textContent = "Next Battle: —";
+    }
+  }
 
   let detailPanel = null;
   function openDetail(p) {
-    // If it’s already open, do nothing
     if (detailPanel) return;
 
-    // Create the outer panel
     detailPanel = document.createElement("div");
-    Object.assign(detailPanel.style, {
-      position: "fixed",
-      top: "50%",
-      left: "50%",
-      transform: "translate(-50%,-50%)",
-      background: "#222",
-      color: "#fff",
-      padding: "16px",
-      border: "2px solid #fff",
-      zIndex: 11000,
-      width: "300px",
-      maxHeight: "80vh",
-      overflowY: "auto",
-      fontFamily: "sans-serif",
-    });
+    detailPanel.className = "pokedex-detail";
+    detailPanel.innerHTML = `
+    <button class="detail-close" aria-label="Close">✕</button>
+    <h3 class="detail-title">${p.name} <small>#${p.id}</small></h3>
+    <img src="${p.spriteBlobUrl || p.spriteUrl}" class="detail-sprite" alt="${p.name}"/>
+    <div class="detail-section">
+      <div><strong>Level:</strong> ${p.level}</div>
+      <div><strong>XP:</strong> ${p.xp} / ${p.level * 100}</div>
+      <div><strong>HP:</strong> ${p.currentHP} / ${p.maxHp}</div>
+    </div>
+    <div class="detail-section">
+      <div><strong>Types:</strong> ${p.types.join(", ")}</div>
+      <div><strong>Abilities:</strong> ${p.abilities.join(", ")}</div>
+    </div>
+    <table class="detail-stats">
+      <thead><tr><th>Stat</th><th>Base</th></tr></thead>
+      <tbody>
+        ${p.stats.map(s => `<tr><td>${s.name}</td><td>${s.value}</td></tr>`).join("")}
+      </tbody>
+    </table>
+    <button class="btn btn-danger w-100 mt-3" id="closeDetail">Close</button>
+  `;
     document.body.appendChild(detailPanel);
 
-    // Title: Name, #, Level
-    const title = document.createElement("h5");
-    title.textContent = `${p.name} (#${p.id}) — Level ${p.level}`;
-    detailPanel.appendChild(title);
-
-    // HP progress bar
-    const hpPct = Math.floor((100 * p.currentHP) / p.maxHp);
-    detailPanel.appendChild(
-      Object.assign(document.createElement("div"), {
-        innerHTML: `<strong>HP:</strong> ${p.currentHP} / ${p.maxHp}`,
-      })
-    );
-    const hpBar = document.createElement("div");
-    hpBar.className = "progress mb-2";
-    Object.assign(hpBar.style, { height: "6px" });
-    hpBar.innerHTML = `
-    <div class="progress-bar bg-danger" role="progressbar"
-         style="width: ${hpPct}%;" aria-valuenow="${hpPct}"
-         aria-valuemin="0" aria-valuemax="100"></div>
-  `;
-    detailPanel.appendChild(hpBar);
-
-    // XP progress bar
-    const threshold = p.level * 100;
-    const xpPct = Math.floor((100 * p.xp) / threshold);
-    detailPanel.appendChild(
-      Object.assign(document.createElement("div"), {
-        innerHTML: `<strong>XP:</strong> ${p.xp} / ${threshold}`,
-      })
-    );
-    const xpBar = document.createElement("div");
-    xpBar.className = "progress mb-2";
-    Object.assign(xpBar.style, { height: "6px" });
-    xpBar.innerHTML = `
-    <div class="progress-bar bg-info" role="progressbar"
-         style="width: ${xpPct}%;" aria-valuenow="${xpPct}"
-         aria-valuemin="0" aria-valuemax="100"></div>
-  `;
-    detailPanel.appendChild(xpBar);
-
-    // Sprite
-    const img = document.createElement("img");
-    img.src = p.spriteBlobUrl || p.spriteUrl;
-    Object.assign(img.style, {
-      display: "block",
-      margin: "8px auto",
-      width: "96px",
-      height: "96px",
-    });
-    detailPanel.appendChild(img);
-
-    // Types & Abilities
-    const typesDiv = document.createElement("div");
-    typesDiv.textContent = "Types: " + p.types.join(", ");
-    detailPanel.appendChild(typesDiv);
-
-    const abDiv = document.createElement("div");
-    abDiv.textContent = "Abilities: " + p.abilities.join(", ");
-    detailPanel.appendChild(abDiv);
-
-    // Stats table
-    const table = document.createElement("table");
-    table.className = "table table-sm table-dark mt-2";
-    table.style.fontSize = "0.85em";
-    table.innerHTML = `
-    <thead><tr><th>Stat</th><th>Base</th></tr></thead>
-    <tbody>
-      ${p.stats
-        .map((s) => `<tr><td>${s.name}</td><td>${s.value}</td></tr>`)
-        .join("")}
-    </tbody>
-  `;
-    detailPanel.appendChild(table);
-
-    // Close button
-    const closeBtn = document.createElement("button");
-    closeBtn.textContent = "Close";
-    closeBtn.className = "btn btn-light mt-2";
-    closeBtn.onclick = () => {
-      detailPanel.remove();
-      detailPanel = null;
-    };
-    detailPanel.appendChild(closeBtn);
+    const close = () => { detailPanel.remove(); detailPanel = null; };
+    detailPanel.querySelector("#closeDetail").onclick = close;
+    detailPanel.querySelector(".detail-close").onclick = close;
   }
+
+
   function toggleRandomBattles() {
     randomBattleEnabled = !randomBattleEnabled;
     setBool("pkm_random_battles", randomBattleEnabled);
@@ -1800,9 +1829,9 @@ button .badge.bg-danger {
   // === Evolution & XP ===
   function gainXP(amount) {
     const stats = getStats(starterName);
-    if(stats == null) return;
+    if (stats == null) return;
     if (stats.level > MAX_LEVEL) stats.level = MAX_LEVEL;
-    if(stats.level >= MAX_LEVEL) return; // No XP gain at max level
+    if (stats.level >= MAX_LEVEL) return; // No XP gain at max level
 
     stats.xp += amount;
     let leveledUp = false;
@@ -3012,17 +3041,11 @@ button .badge.bg-danger {
   );
   renderHeader();
   initPartner();
-  if (randomBattleEnabled) scheduleRandomBattle();
-  // 🔁 Update the random battle timer every second
   setInterval(() => {
-    const now = Date.now();
-    if (
-      (randomBattleEnabled && nextBattleTime) ||
-      getInt(STORAGE.pokestopCooldown) > now
-    ) {
-      renderHeader();
-    }
+    updatePokeStopTimer();
+    updateNextBattleTimer();
   }, 1000);
+
 
   unsafeWindow.changePokemon = (name) => {
     GM_setValue(STORAGE.starter, name);
