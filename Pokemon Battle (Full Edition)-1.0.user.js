@@ -4,7 +4,7 @@
 // @connect     pokeapi.co
 // @connect     https://dstokesncstudio.com/pokeapi/pokeapi.php
 // @namespace   dstokesncstudio.com
-// @version     3.0.0.3
+// @version     3.0.0.4
 // @description Full version with XP, evolution, stats, sound, shop, battles, and walking partner — persistent across sites.
 // @include     *
 // @grant       GM.xmlHttpRequest
@@ -235,6 +235,7 @@ button .badge.bg-danger { animation: pulseBadge 1.2s infinite; position: relativ
         ),
       };
       this.XP_TO_LEVEL = (lvl) => 50 + lvl * 25;
+      this.POKE_CENTER_COST = 250; // coins
       this.getInt = (k, d = 0) => {
         const v = parseInt(GM_getValue(k, d), 10);
         return isNaN(v) ? d : v;
@@ -432,7 +433,7 @@ button .badge.bg-danger { animation: pulseBadge 1.2s infinite; position: relativ
 
   const updater = new CheckUpdate(cfg);
   updater.check(); // runs full check
-
+  const POKE_CENTER_COST = cfg.POKE_CENTER_COST;
   // --- Blocklist: Add domains or paths you want to skip ---
   const BLOCKLIST = [
     /:\/\/www\.facebook\.com\/adsmanager\//, // Example: Facebook ads manager
@@ -583,10 +584,10 @@ button .badge.bg-danger { animation: pulseBadge 1.2s infinite; position: relativ
   const POKEAPI_VALID_FORMS = {
     // only include forms that PokéAPI has sprites for
     mega: [
-      "charizard-mega-x",
-      "charizard-mega-y",
-      "mewtwo-mega-x",
-      "mewtwo-mega-y",
+      "charizard-megax",
+      "charizard-megay",
+      "mewtwo-megax",
+      "mewtwo-megay",
       "lucario-mega",
       "gyarados-mega",
     ],
@@ -611,6 +612,27 @@ button .badge.bg-danger { animation: pulseBadge 1.2s infinite; position: relativ
     "lycanroc-midday": "lycanroc",
     "zygarde-50": "zygarde",
     "wishiwashi-solo": "wishiwashi",
+    "ho-ho": "hooh",
+    "porygon-z": "porygonz",
+    "type-null": "typenull",
+    "jangmo-o": "jangmoo",
+    "hakamo-o": "hakamoo",
+    "kommo-o": "kommoo",
+    "farfetchd": "farfetchd",
+    "mr-mime": "mrmime",
+    "mr-rime": "mrrime",
+    "mime-jr": "mimejr",
+    "flabebe": "flabebe",
+    "nidoran-f": "nidoranf",
+    "nidoran-m": "nidoranm",
+    "tapu-koko": "tapukoko",
+    "tapu-lele": "tapulele",
+    "tapu-bulu": "tapubulu",
+    "tapu-fini": "tapufini",
+    "charizard-mega-x": "charizard-megax",
+    "charizard-mega-y": "charizard-megay",
+    "mewtwo-mega-x": "mewtwo-megax",
+    "mewtwo-mega-y": "mewtwo-megay",
     // Add more as needed
   };
   function getRandomForm(baseName) {
@@ -1084,9 +1106,11 @@ button .badge.bg-danger { animation: pulseBadge 1.2s infinite; position: relativ
     hpWrapper.style.display = "flex";
     hpWrapper.style.flexDirection = "column";
     const hpLabel = document.createElement("small");
+    hpLabel.id = "pkm-hp-label";
     hpLabel.textContent = `HP: ${curHp}/${maxHp}`;
     const hpPct = Math.round((curHp / maxHp) * 100);
     const hpBar = document.createElement("div");
+    hpBar.id = "pkm-hp-bar";
     hpBar.className = "progress";
     hpBar.style.width = "120px";
     hpBar.style.height = "8px";
@@ -1146,7 +1170,7 @@ button .badge.bg-danger { animation: pulseBadge 1.2s infinite; position: relativ
     } else {
       timerStr += ` | <span id="pokeStopStatus">PokéStop: Ready!</span>`;
     }
-    status.innerHTML = `Coins: ${getInt(STORAGE.coins)} | Balls: ${getInt(
+    status.innerHTML = `<span id="pk-header-coins">💰 Coins: ${getInt(STORAGE.coins)}</span> | Balls: ${getInt(
       STORAGE.balls
     )} | Potions: ${getInt(STORAGE.potions)}${timerStr}`;
 
@@ -1163,6 +1187,29 @@ button .badge.bg-danger { animation: pulseBadge 1.2s infinite; position: relativ
 
     row.appendChild(
       createButton("⚔️ Battle", openBattle, "btn btn-success btn-sm")
+    );
+    /*
+    row.appendChild(
+      createButton("🧑‍🤝‍🧑 Friends", openFriends, "btn btn-success btn-sm")
+    );
+    row.appendChild(
+      createButton("📅 Events", openEvents, "btn btn-success btn-sm")
+    );
+    row.appendChild(
+      createButton("📬 Inbox", openInbox, "btn btn-success btn-sm")
+    );
+    row.appendChild(
+      createButton("📰 News", openNews, "btn btn-success btn-sm")
+    );
+    row.appendChild(
+      createButton("🎯 Quests", openQuests, "btn btn-success btn-sm")
+    );
+    row.appendChild(
+      createButton("🧪 Research", openResearch, "btn btn-success btn-sm")
+    );
+    */
+    row.appendChild(
+      createButton("Pokemon Center", pokeCenter, "btn btn-success btn-sm")
     );
     row.appendChild(
       createButton("📍 PokéStop", openPokeStop, "btn btn-success btn-sm")
@@ -1207,7 +1254,29 @@ button .badge.bg-danger { animation: pulseBadge 1.2s infinite; position: relativ
     updateNextBattleTimer();
 
   }
+  function updateHeaderHP() {
+    const hpLabel = document.querySelector("#pkm-hp-label");
+    const hpBar = document.querySelector("#pkm-hp-bar");
+    const stored = getStr(STORAGE.starter);
+    if (!stored) return;
+    const stats = getStats(stored);
+    const maxHp = stats.hp;
+    const curHp = stats.currentHP != null ? stats.currentHP : maxHp;
+    console.log("your current HP is: " + curHp);
+    const hpPct = Math.round((curHp / maxHp) * 100);
+    if (hpLabel) hpLabel.textContent = `HP: ${curHp}/${maxHp}`;
+    if (hpBar)
+      hpBar.innerHTML = `
+    <div class="progress-bar bg-danger"
+         role="progressbar"
+         style="width: ${hpPct}%;"
+         aria-valuenow="${hpPct}"
+         aria-valuemin="0"
+          aria-valuemax="100"></div>
+  `;
 
+
+  }
   // --- Partner setup ---
   function initPartner() {
     const stored = getStr(STORAGE.starter);
@@ -1300,77 +1369,97 @@ button .badge.bg-danger { animation: pulseBadge 1.2s infinite; position: relativ
       scheduleRandomBattle(); // Schedule next
     }, delay);
   }
-  function fetchPartner(name) {
+  async function fetchPartner(name) {
     if (!name) return;
 
     starterName = name;
-    partnerSpriteUrl = `https://play.pokemonshowdown.com/sprites/ani/${name.toLowerCase()}.gif`;
     partnerName = name[0].toUpperCase() + name.slice(1);
-    const isShiny = name.toLowerCase().startsWith("shiny ");
-    let rawName = isShiny
-      ? name.toLowerCase().replace("shiny ", "")
-      : name.toLowerCase();
 
-    // Apply sprite name fixes if needed
-    if (SPRITE_NAME_FIXES[rawName]) {
-      rawName = SPRITE_NAME_FIXES[rawName];
+    // ✅ Normalize name for lookups
+    const rawName = name.toLowerCase().replace("shiny ", "");
+    const fixedName = SPRITE_NAME_FIXES[rawName] || rawName;
+
+    // ✅ Check if this Pokémon is already in the Pokédex
+    const pokedex = getArr(STORAGE.pokedex);
+    let dexEntry = pokedex.find((p) => p.name.toLowerCase() === fixedName);
+
+    // ✅ If already recorded, use its sprite directly
+    if (dexEntry && dexEntry.spriteUrl) {
+      partnerSpriteUrl = dexEntry.spriteUrl;
+    } else {
+      // ✅ Choose the best fallback sprite (animated > shiny > static)
+      const showdownGif = `https://play.pokemonshowdown.com/sprites/ani/${fixedName}.gif`;
+      const bwGif = `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/versions/generation-v/black-white/animated/${fixedName}.gif`;
+      const staticPng = `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${fixedName}.png`;
+
+      // We’ll assign this now, and override later if API gives a better URL
+      partnerSpriteUrl = showdownGif;
+      if (!(await imageExists(showdownGif))) {
+        partnerSpriteUrl = (await imageExists(bwGif)) ? bwGif : staticPng;
+      }
+
+      // ✅ Fetch from API to build Pokédex entry if not saved yet
+      await new Promise((resolve) => {
+        GM.xmlHttpRequest({
+          method: "GET",
+          url: `https://pokeapi.co/api/v2/pokemon/${encodeURIComponent(fixedName)}`,
+          onload: async (res) => {
+            try {
+              const d = JSON.parse(res.responseText);
+              const entry = {
+                id: d.id,
+                name: d.name[0].toUpperCase() + d.name.slice(1),
+                spriteUrl: d.sprites.front_default || partnerSpriteUrl,
+                types: d.types.map((t) => t.type.name),
+                abilities: d.abilities.map((a) => a.ability.name),
+                stats: d.stats.map((s) => ({
+                  name: s.stat.name,
+                  value: s.base_stat,
+                })),
+                hp: d.stats.find((s) => s.stat.name === "hp").base_stat,
+                level: 1,
+                xp: 0,
+                currentHP: d.stats.find((s) => s.stat.name === "hp").base_stat,
+              };
+
+              await recordPokedex(entry);
+              dexEntry = entry;
+              partnerSpriteUrl = entry.spriteUrl;
+            } catch (err) {
+              console.error("Failed to parse PokéAPI:", err);
+            }
+            resolve();
+          },
+          onerror: (err) => {
+            console.error("Failed to fetch partner from PokéAPI:", err);
+            resolve();
+          },
+        });
+      });
     }
 
-    GM.xmlHttpRequest({
-      method: "GET",
-      url: `https://pokeapi.co/api/v2/pokemon/${encodeURIComponent(name)}`,
-      onload: async (res) => {
-        const d = JSON.parse(res.responseText);
-        // build your entry
-        const entry = {
-          id: d.id,
-          name: d.name[0].toUpperCase() + d.name.slice(1),
-          spriteUrl: partnerSpriteUrl,
-          types: d.types.map((t) => t.type.name),
-          abilities: d.abilities.map((a) => a.ability.name),
-          stats: d.stats.map((s) => ({
-            name: s.stat.name,
-            value: s.base_stat,
-          })),
-          hp: d.stats.base_stat,
-          level: 1,
-          xp: 0,
-          currentHP: d.stats.find((s) => s.stat.name === "hp").base_stat,
-        };
+    // ✅ Update or initialize stats
+    const stats = getStats(name) || {};
+    if (stats.hp == null || stats.currentHP == null) {
+      stats.hp = dexEntry?.hp || stats.hp || 100;
+      stats.currentHP = dexEntry?.currentHP || stats.hp;
+    }
+    setStats(name, stats);
 
-        // 2) record in the Pokédex
-        await recordPokedex(entry);
-
-        // 3) now set up your partner normally:
-        starterName = name;
-        partnerName = entry.name;
-        //partnerSpriteUrl = entry.spriteUrl;
-
-        // if you want to track its stats in storage you can also do:
-        const stats = getStats(name);
-        console.log(stats);
-        if (
-          stats.hp == null ||
-          stats.currentHP == null ||
-          stats.currentHP == undefined
-        ) {
-          stats.currentHP = entry.currentHP;
-          stats.hp = entry.currentHP;
-          console.log(entry);
-          setStats(name, stats);
-        } else {
-          setStats(name, stats);
-        }
-
-        renderHeader();
-        spawnWalkingSprite(partnerSpriteUrl);
-      },
-      onerror: (err) => {
-        console.error("Failed to fetch partner:", err);
-      },
-    });
+    // ✅ Final render and walking sprite
     renderHeader();
     spawnWalkingSprite(partnerSpriteUrl);
+  }
+
+  function imageExists(url) {
+    return new Promise((resolve) => {
+      GM.xmlHttpRequest({
+        method: "HEAD",
+        url,
+        onload: (res) => resolve(res.status >= 200 && res.status < 300),
+        onerror: () => resolve(false),
+      });
+    });
   }
 
   // --- Walking sprite ---
@@ -1849,6 +1938,7 @@ button .badge.bg-danger {
 
     setStats(starterName, stats);
     if (leveledUp) evolvePartner();
+    updateHeaderHP();
     renderHeader();
   }
   function evolvePartner() {
@@ -2078,6 +2168,61 @@ button .badge.bg-danger {
     }
     startBattle(); // this should call drawBattle() initially
   }
+  function updateHeaderCoins() {
+    const coins = getInt(STORAGE.coins, 0);
+    const coinBtn = document.getElementById("pk-header-coins");
+    if (coinBtn) {
+      coinBtn.textContent = `💰 Coins: ${coins}`;
+    }
+
+  }
+  function pokeCenter() {
+    const coins = getInt(STORAGE.coins, 0);
+    if (coins < POKE_CENTER_COST) {
+      alert("❌ You don't have enough PokéCoins to heal your party.");
+      return;
+    }
+    healPokemon();
+    playSound("heal");
+    setInt(STORAGE.coins, coins - POKE_CENTER_COST);
+    updateHeaderCoins();
+  }
+  function healPokemon() {
+    let party = getObj(STORAGE.party);
+    if (!party || typeof party !== "object") return 0;
+
+    let changed = 0;
+
+    // Heal each party species
+    for (const name of Object.keys(party)) {
+      const key = name.toLowerCase();
+      const s = getStats(key);
+      if (!s || typeof s.hp !== "number") continue;
+
+      const before = s.currentHP ?? 0;
+      if (before < s.hp) {
+        s.currentHP = s.hp;
+        setStats(key, s);
+        changed++;
+      }
+    }
+
+    // Also heal starter if it's not already in the party map
+    const starter = (getStr(STORAGE.starter, "") || "").toLowerCase();
+    if (starter && !party[starter]) {
+      const s = getStats(starter);
+      if (s && typeof s.hp === "number" && (s.currentHP ?? 0) < s.hp) {
+        s.currentHP = s.hp;
+        setStats(starter, s);
+        changed++;
+      }
+    }
+    updateHeaderCoins();
+    updateHeaderHP();
+    if (changed > 0) {
+      alert("✨ Your entire party has been healed!");
+    }
+  }
 
   function startBattle() {
     const id = Math.floor(Math.random() * 649) + 1;
@@ -2096,8 +2241,8 @@ button .badge.bg-danger {
         showdownName = SPRITE_NAME_FIXES[showdownName] || showdownName;
 
         const sprite = isShiny
-          ? `https://play.pokemonshowdown.com/sprites/ani-shiny/${showdownName}.gif`
-          : `https://play.pokemonshowdown.com/sprites/ani/${showdownName}.gif`;
+          ? `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/shiny/${d.id}.png`
+          : d.sprites.front_default;
 
         wild = {
           name: displayName,
@@ -2238,9 +2383,11 @@ button .badge.bg-danger {
       makePkButton(
         () => {
           // Sleep Powder
-          wildSleepTurns = 1;
-          drawBattle(`${wild.name} fell asleep!`);
-          setTimeout(wildAttack, 500);
+          // set random sleep turns between 1-3
+          let turns = 1 + Math.floor(Math.random() * 5);
+          wildSleepTurns = turns;
+          drawBattle(`${wild.name} fell asleep for ${turns}!`);
+          setTimeout(wildAttack, 900);
         },
         { icon: "🌙", label: "Sleep Powder" }
       ),
@@ -2288,6 +2435,7 @@ button .badge.bg-danger {
     updateHPBar("hp-wild", wHP, wMaxHP);
     updateHPBar("hp-you", pHP, getStats(starterName).hp);
   }
+
 
   function animateHit() {
     const el = document.getElementById("wild-img");
@@ -2337,6 +2485,7 @@ button .badge.bg-danger {
     animatePartnerHit();
     playSound("hit");
     setTimeout(() => setHP(pHP), stats.hp);
+    updateHeaderHP();
     renderHeader();
 
     // === NEW: end-of-turn damage over time
@@ -2441,7 +2590,7 @@ button .badge.bg-danger {
           recordPokedex({
             id: d.id,
             name: d.name[0].toUpperCase() + d.name.slice(1),
-            spriteUrl: d.sprites.front_default,
+            spriteUrl: wild.sprite,
             types: d.types.map((t) => t.type.name),
           });
         } catch (err) {
@@ -2475,7 +2624,7 @@ button .badge.bg-danger {
     const newHP = Math.min(stats.hp, pHP + 30); // Don't exceed max HP
     setHP(newHP); // ✅ This triggers the animation too
     pHP = newHP; // ✅ Update your local HP value
-
+    updateHeaderHP();
     drawBattle("You used a Potion.");
     renderHeader();
 
@@ -2499,6 +2648,7 @@ button .badge.bg-danger {
     s.currentHP = pHP;
     setStats(starterName, s);
     setHP(pHP);
+    updateHeaderHP();
     drawBattle("You revived to 50% HP!");
   }
 
@@ -2710,9 +2860,38 @@ button .badge.bg-danger {
 
     drawBagSorted(currentSort, msg);
   }
-  function drawBagSorted(sortBy, msg) {
+  // --- ✅ Async version: Fetch Pokémon ID by name ---
+  function getPokeIdByName(name) {
+    return new Promise((resolve) => {
+      console.log("Fetching Pokémon ID for:", name);
+      GM.xmlHttpRequest({
+        method: "GET",
+        url: `https://pokeapi.co/api/v2/pokemon/${name.toLowerCase()}`,
+        onload(res) {
+          try {
+            const d = JSON.parse(res.responseText);
+            resolve(d.id);
+          } catch (err) {
+            console.warn("Failed to fetch Pokémon ID:", err);
+            resolve(null);
+          }
+        },
+        onerror(err) {
+          console.warn("Failed to fetch Pokémon ID:", err);
+          resolve(null);
+        }
+      });
+    });
+  }
+
+  // --- ✅ Full Bag UI with working sprite loading ---
+  async function drawBagSorted(sortBy, msg) {
     const party = getObj(STORAGE.party);
     const names = Object.keys(party);
+
+    // ✅ Parse the Pokédex array
+    const pokedex = getArr(STORAGE.pokedex);
+
     const sorted = [...names].sort((a, b) => {
       if (sortBy === "name") return a.localeCompare(b);
       if (sortBy === "quantity") return party[b] - party[a];
@@ -2733,7 +2912,7 @@ button .badge.bg-danger {
     if (sorted.length === 0) {
       container.innerHTML += "<em>You haven’t caught any Pokémon yet.</em>";
     } else {
-      sorted.forEach((name) => {
+      for (const name of sorted) {
         const count = party[name];
         const row = document.createElement("div");
         row.style.display = "flex";
@@ -2742,18 +2921,33 @@ button .badge.bg-danger {
         row.style.margin = "4px 0";
 
         const img = document.createElement("img");
-        let isShiny = name.toLowerCase().includes("shiny");
-        let rawName = name.toLowerCase().replace("shiny ", ""); // remove "Shiny " if present
 
-        // Fix known form names if needed (optional: use SPRITE_NAME_FIXES here)
-        if (SPRITE_NAME_FIXES[rawName]) {
-          rawName = SPRITE_NAME_FIXES[rawName];
+        // ✅ Find this Pokémon in the pokedex
+        const dexEntry = pokedex.find(
+          (p) => p.name.toLowerCase() === name.toLowerCase()
+        );
+
+        let spriteUrl = null;
+
+        if (dexEntry && dexEntry.spriteUrl) {
+          spriteUrl = dexEntry.spriteUrl;
         }
 
-        img.src = `https://play.pokemonshowdown.com/sprites/${isShiny ? "ani-shiny" : "ani"
-          }/${rawName}.gif`;
+        // ✅ Fallback if sprite URL missing
+        if (!spriteUrl) {
+          const id = await getPokeIdByName(name.toLowerCase());
+          spriteUrl = `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${id}.png`;
+        }
 
+        // ✅ Set image source from pokedex or fallback
+        img.src = spriteUrl || "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/poke-ball.png";
         img.style.width = "40px";
+
+        // ✅ Mark shiny if the sprite URL contains 'shiny'
+        const isShiny = spriteUrl.includes("/shiny/");
+        if (isShiny) {
+          img.title = "✨ Shiny Pokémon!";
+        }
 
         const lbl = document.createElement("span");
         lbl.textContent = `${name} x${count}`;
@@ -2771,15 +2965,15 @@ button .badge.bg-danger {
 
         const value = baseValues[rarity] * (level + 1);
 
+        // ✅ Set Active button
         const btnSet = createButton("Set Active", () => {
           const oldStarter = getStr(STORAGE.starter);
           if (oldStarter && oldStarter !== name) {
             const party = getObj(STORAGE.party);
             const oldName = oldStarter.toLowerCase();
-            party[oldName] = (party[oldName] || 0) + 1; // add old starter to bag
+            party[oldName] = (party[oldName] || 0) + 1;
 
-            if (--party[name] <= 0) delete party[name]; // remove one instance of new starter from bag
-
+            if (--party[name] <= 0) delete party[name];
             setObj(STORAGE.party, party);
           }
 
@@ -2788,6 +2982,7 @@ button .badge.bg-danger {
           renderHeader();
         });
 
+        // ✅ Sell button
         const btnSell = createButton(`Sell (${value}c)`, () => {
           const p = getObj(STORAGE.party);
           if (--p[name] <= 0) delete p[name];
@@ -2809,7 +3004,7 @@ button .badge.bg-danger {
 
         row.append(left, controls);
         container.appendChild(row);
-      });
+      }
     }
 
     bagPanel.innerHTML = "<strong>Your Pokémon Bag:</strong><br>";
@@ -2818,6 +3013,8 @@ button .badge.bg-danger {
     closeBtn.style.marginTop = "10px";
     bagPanel.appendChild(closeBtn);
   }
+
+
   function closeBag() {
     if (bagPanel) document.body.removeChild(bagPanel);
     bagPanel = null;
