@@ -99,6 +99,7 @@
             this.CONCURRENCY = 6;
             this.SHINY_ODDS = 4096;
             this.POKE_CENTER_COST = 250;
+            this.pkm_player_name = "";
             this.STARTERS = ["bulbasaur", "charmander", "squirtle"];
             this.STORAGE = {
                 PLAYER_DATA: "pkm_player_data",
@@ -106,6 +107,7 @@
                 MOVE_CACHE: "pkm_move_cache",
                 SPECIES_META: "pkm_species_meta",
                 STARTER: "pkm_starter"
+
             };
             this.SOUNDS = {
                 hit: new Audio("https://github.com/jellowrld/pokemon-tampermonkey/raw/refs/heads/main/hit.mp3"),
@@ -563,6 +565,7 @@
 
     function getPlayer(name) {
         if (!PLAYERS.players[name]) {
+            
             // Create a new player if not existing
             PLAYERS.players[name] = new Player(name);
             persistPlayers();
@@ -714,9 +717,10 @@
         if (existing) existing.remove();
         const hud = document.createElement("div");
         hud.id = "pokemon-mini-hud";
+        hud.className = "bg-dark border-primary border border-3";
         hud.style.cssText = `
-    position:fixed; bottom:10px; right:10px; background:#1c1c1c;
-    color:#fff; border:2px solid #ff4b2b; padding:10px 14px;
+    position:fixed; bottom:10px; right:10px;
+    color:#fff; padding:10px 14px;
     border-radius:10px; font-family:monospace; z-index:999999;
     font-size:12px; opacity:0.9; max-width:260px;
   `;
@@ -731,7 +735,6 @@
         document.getElementById("poke-refresh").onclick = () => SaveLoadManager.loadAll();
         document.getElementById("poke-clear").onclick = () => SaveLoadManager.clearAll();
         document.getElementById("poke-shop").onclick = () => {
-            const p = API.getOrCreatePlayer("Ash");
             const shop = new Shop();
             let text = shop.items.map(i => `${i.name} - $${i.price}`).join("\n");
             alert(`🛒 Shop:\n${text}`);
@@ -762,6 +765,7 @@
         // if both values already exist, skip UI
         let playerName = GM_getValue("pkm_player_name", null);
         let starterChosen = GM_getValue("pkm_starter_chosen", null);
+        getPlayer(playerName); // ensure player exists
         if (playerName && starterChosen) {
             pokemon.log(`Welcome back, ${playerName}! Starter: ${starterChosen}`);
             return;
@@ -873,6 +877,7 @@
                 player.party.addPokemon(mon);
                 pokemon.success(`🎉 ${playerName} chose ${labelize(starter)}!`);
                 // persist to avoid any re-show later
+                getPlayer(playerName); // ensure player exists
                 if (typeof persistPlayers === "function") persistPlayers();
             }
             // close UI

@@ -3566,8 +3566,6 @@ button .badge.bg-danger {
     }
   }
 
-
-
   async function migratePartyToInstancesIfNeeded() {
     const party = getObj(STORAGE.party);
     if (!party || typeof party !== "object") return;
