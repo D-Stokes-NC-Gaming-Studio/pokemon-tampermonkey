@@ -3621,10 +3621,6 @@ button .badge.bg-danger {
     }
   }
 
-
-
-
-
   function closeBag() {
     if (bagPanel) document.body.removeChild(bagPanel);
     bagPanel = null;
