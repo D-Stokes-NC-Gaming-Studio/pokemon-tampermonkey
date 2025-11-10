@@ -1,0 +1,190 @@
+<!doctype html>
+<html>
+
+<head>
+    <meta charset="utf-8" />
+    <title>Pokémon Sidebar</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" />
+    <link href="css/bootstrap.min.css" rel="stylesheet" />
+    <link rel="stylesheet" href="css/sidebar.css" />
+
+
+
+</head>
+
+<body>
+    <header class="hdr">
+        <div class="title"><span>Pokémon</span><span id="pokeStopPanel"></span></div>
+        <!-- header: add Battle button -->
+        <nav class="hdr-actions">
+            <button id="btnHome" class="btn btn-success btn-sm" title="Home">Home</button>
+            <!--<button id="btnBattle" class="btn btn-success btn-sm" title="Battle Wild Pokémon">⚔️ Battle</button>-->
+            <button id="btnPokeStop" class="btn btn-success btn-sm" title="Spin PokéStop">📍 PokéStop</button>
+            <ul id="navPrimary" class="hdr-nav w-auto"></ul>
+            <ul id="navSecondary" class="hdr-nav w-auto"></ul>
+
+        </nav>
+    </header>
+
+    <!-- ============= PICKER / RESULT VIEW ============= -->
+    <section id="viewPicker" class="card">
+        <div id="status" class="muted small">Loading choices…</div>
+        <div id="balls" class="balls hidden"><!-- 3 balls go here --></div>
+    </section>
+
+    <section id="resultCard" class="card hidden">
+        <div class="result">
+            <div class="result-sprite" id="resultSprite"></div>
+            <div class="result-info">
+                <div id="resultName" class="name">—</div>
+                <div id="resultMeta" class="muted small">—</div>
+            </div>
+        </div>
+
+        <hr class="sep" />
+        <div id="resultTypes" class="types"></div>
+        <div id="resultStats" class="stats small resultStats"></div>
+
+        <div class="row">
+            <button id="fetchMore" class="btn btn-info">Fetch More Data</button>
+            <span id="fetchMoreStatus" class="muted tiny"></span>
+        </div>
+
+        <!-- Dev helper to simulate catching until real catching is added -->
+        <div id="devPanel" class="row">
+            <button id="devAddToDex" class="btn small bg-success" title="Temporary dev helper">
+                Add to Pokédex (dev)
+            </button>
+            <span id="devAddStatus" class="muted tiny"></span>
+        </div>
+    </section>
+
+    <!-- ============= BATTLE VIEW (top-level, not nested) ============= -->
+    <section id="viewBattle" class="card hidden">
+        <div id="battlePanel" class="battle-panel">
+            <div class="muted small">Tap “Start Battle” to encounter a random wild Pokémon (Gen 1–5).</div>
+        </div>
+        <div class="row">
+            <button id="btnStartBattle" class="btn bg-success btn-sm w-auto">Start Battle</button>
+            <span id="battleStatus" class="muted tiny"></span>
+        </div>
+    </section>
+
+    <!-- ============= POKEDEX VIEW ============= -->
+    <section id="viewDex" class="card hidden viewDex">
+        <div class="dex-header">
+            <div class="name">Pokédex</div>
+            <input id="dexSearch" class="input" type="text" placeholder="Search name or #..." />
+        </div>
+
+        <div id="dex-tools" class="dex-tools">
+            <button id="btnAddOwned" class="btn small">Add Owned</button>
+            <span id="addOwnedHint" class="muted tiny">Paste names or Dex #, comma/line-separated</span>
+        </div>
+
+        <div id="addOwnedPanel" class="add-owned hidden">
+            <textarea id="addOwnedInput" rows="4" placeholder="e.g.
+Bulbasaur
+4
+Squirtle, 25, eevee"></textarea>
+            <div class="row">
+                <button id="addOwnedSave" class="btn">Save</button>
+                <button id="addOwnedCancel" class="btn">Cancel</button>
+                <span id="addOwnedStatus" class="muted tiny"></span>
+            </div>
+        </div>
+
+        <!-- Fixed-height scroll area -->
+        <div class="dex-scroll">
+            <div id="dexList" class="dex-list"><!-- rows injected here --></div>
+            <div id="dexEmpty" class="muted small hidden">No Pokémon caught yet.</div>
+        </div>
+    </section>
+    <!-- ============= PARTY / STORAGE VIEW ============= -->
+    <section id="viewParty" class="card hidden">
+        <div class="party-header">
+            <div class="name">Party & Storage</div>
+
+            <div class="box-nav">
+                <button id="boxPrev" class="btn btn-success btn-sm" title="Previous Box">⟨</button>
+                <span id="boxTitle" class="muted small">Box 1</span>
+                <button id="boxNext" class="btn btn-success btn-sm" title="Next Box">⟩</button>
+            </div>
+        </div>
+
+        <!-- Party (max 6) -->
+        <div class="party-wrap">
+            <div class="party-grid" id="partyGrid"><!-- 6 slots injected --></div>
+            <div class="tiny muted">Drag from storage into the party to swap; drag party → storage to store.</div>
+        </div>
+
+        <hr class="sep" />
+
+        <!-- Storage (30 per box, 5×6) -->
+        <div class="storage-wrap">
+            <div id="storageGrid" class="storage-grid"><!-- 30 slots injected --></div>
+        </div>
+    </section>
+    <!-- ============= SETTINGS VIEW ============= -->
+    <section id="viewSettings" class="card justify-content-center text-center hidden">
+        <div class="dex-header form-control justify-content-center">
+            <div class="name">Settings</div>
+        </div>
+        <form class="settings-form form-control">
+            <div class="settings-row m-2">
+                <label class="settings-label form-check-label" for="aduioEnabled">
+                    <span class="form-text">Enable Sounds</span>
+                </label>
+                <input id="aduioEnabled" type="checkbox" class="form-check-input" />
+            </div>
+            <div class="settings-row m-2">
+                <label class="settings-label form-check-label" for="audioVolume">
+                    <span class="form-text">Volume</span>
+                    <small id="audioVolumeVal" class="muted form-text">80%</small>
+                </label>
+                <input id="audioVolume" type="range" min="0" max="100" step="1" value="80%" class="form-range w-auto" />
+            </div>
+            <div class="settings-row m-2">
+                <label class="settings-label form-check-label" for="testSound">
+                    <span class="form-text">Auto-play sounds (no click)</span>
+                </label>
+                <button id="testSound" type="button" class="btn btn-success btn-sm">
+                    <i class="bi bi-play-fill"></i>
+                    Test Sound
+                </button>
+            </div>
+            <div class="settings-row m-2">
+                <label class="settings-label form-check-label" for="migrateData">
+                    <span class="form-text">Migrate Data</span>
+                </label>
+                <button id="migrateData" type="button" class="btn btn-success btn-sm">Migrate Old Data</button>
+
+            </div>
+            <div class="settings-row m-2">
+                <label class="settings-label form-check-label" for="saveBtn">
+                    <span class="form-text">Auto-play sounds (no click)</span>
+                </label>
+                <button id="saveBtn" type="button" class="btn btn-success btn-sm">
+                    <i class="bi bi-play-fill"></i>
+                    Save Data
+                </button>
+            </div>
+        </form>
+    </section>
+    <footer class="muted tiny d-flex gap-2 mx-3 my-2 justify-content-center">
+        <span>v</span>
+        <span id="ver"></span>
+        <span> | </span>
+        <span>by </span>
+        <a href="https://dstokesncstudio.com" target="_blank" rel="noopener">dstokesncstudio.com</a>
+        <span> | </span>
+        <div><span class="text-white">Current Coins: </span><span id="userCoins" class="text-success fw-bolder"></span>
+        </div>
+    </footer>
+
+    <script type="module" src="js/sidebar.js"></script>
+    <script src="js/bootstrap.bundle.min.js"></script>
+</body>
+
+</html>

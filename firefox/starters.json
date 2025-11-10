@@ -1,0 +1,3141 @@
+[
+  {
+    "pokeDex_num": 1,
+    "name": "bulbasaur",
+    "base_image": "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/1.png",
+    "shiny_image": "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/shiny/1.png",
+    "base_experience": 64,
+    "types": [
+      {
+        "slot": 1,
+        "type": {
+          "name": "grass",
+          "url": "https://pokeapi.co/api/v2/type/12/"
+        }
+      },
+      {
+        "slot": 2,
+        "type": {
+          "name": "poison",
+          "url": "https://pokeapi.co/api/v2/type/4/"
+        }
+      }
+    ],
+    "stats": [
+      {
+        "name": "hp",
+        "value": 45
+      },
+      {
+        "name": "attack",
+        "value": 49
+      },
+      {
+        "name": "defense",
+        "value": 49
+      },
+      {
+        "name": "special-attack",
+        "value": 65
+      },
+      {
+        "name": "special-defense",
+        "value": 65
+      },
+      {
+        "name": "speed",
+        "value": 45
+      }
+    ],
+    "moves": [
+      "razor-wind",
+      "swords-dance",
+      "cut",
+      "bind",
+      "vine-whip",
+      "headbutt",
+      "tackle",
+      "body-slam",
+      "take-down",
+      "double-edge",
+      "growl",
+      "strength",
+      "mega-drain",
+      "leech-seed",
+      "growth",
+      "razor-leaf",
+      "solar-beam",
+      "poison-powder",
+      "sleep-powder",
+      "petal-dance",
+      "string-shot",
+      "toxic",
+      "rage",
+      "mimic",
+      "double-team",
+      "defense-curl",
+      "light-screen",
+      "reflect",
+      "bide",
+      "sludge",
+      "skull-bash",
+      "amnesia",
+      "flash",
+      "rest",
+      "substitute",
+      "snore",
+      "curse",
+      "protect",
+      "sludge-bomb",
+      "mud-slap",
+      "outrage",
+      "giga-drain",
+      "endure",
+      "charm",
+      "false-swipe",
+      "swagger",
+      "fury-cutter",
+      "attract",
+      "sleep-talk",
+      "return",
+      "frustration",
+      "safeguard",
+      "sweet-scent",
+      "synthesis",
+      "hidden-power",
+      "sunny-day",
+      "rock-smash",
+      "facade",
+      "nature-power",
+      "helping-hand",
+      "ingrain",
+      "knock-off",
+      "secret-power",
+      "weather-ball",
+      "grass-whistle",
+      "bullet-seed",
+      "magical-leaf",
+      "natural-gift",
+      "worry-seed",
+      "seed-bomb",
+      "energy-ball",
+      "leaf-storm",
+      "power-whip",
+      "captivate",
+      "grass-knot",
+      "venoshock",
+      "acid-spray",
+      "round",
+      "echoed-voice",
+      "grass-pledge",
+      "work-up",
+      "grassy-terrain",
+      "confide",
+      "grassy-glide",
+      "tera-blast",
+      "trailblaze"
+    ],
+    "variants": [
+      {
+        "name": "bulbasaur",
+        "image": "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/1.png"
+      }
+    ]
+  },
+  {
+    "pokeDex_num": 4,
+    "name": "charmander",
+    "base_image": "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/4.png",
+    "shiny_image": "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/shiny/4.png",
+    "base_experience": 62,
+    "types": [
+      {
+        "slot": 1,
+        "type": {
+          "name": "fire",
+          "url": "https://pokeapi.co/api/v2/type/10/"
+        }
+      }
+    ],
+    "stats": [
+      {
+        "name": "hp",
+        "value": 39
+      },
+      {
+        "name": "attack",
+        "value": 52
+      },
+      {
+        "name": "defense",
+        "value": 43
+      },
+      {
+        "name": "special-attack",
+        "value": 60
+      },
+      {
+        "name": "special-defense",
+        "value": 50
+      },
+      {
+        "name": "speed",
+        "value": 65
+      }
+    ],
+    "moves": [
+      "mega-punch",
+      "fire-punch",
+      "thunder-punch",
+      "scratch",
+      "swords-dance",
+      "cut",
+      "wing-attack",
+      "mega-kick",
+      "headbutt",
+      "body-slam",
+      "take-down",
+      "double-edge",
+      "leer",
+      "bite",
+      "growl",
+      "roar",
+      "ember",
+      "flamethrower",
+      "submission",
+      "counter",
+      "seismic-toss",
+      "strength",
+      "dragon-rage",
+      "fire-spin",
+      "dig",
+      "toxic",
+      "rage",
+      "mimic",
+      "double-team",
+      "smokescreen",
+      "defense-curl",
+      "reflect",
+      "bide",
+      "fire-blast",
+      "swift",
+      "skull-bash",
+      "fury-swipes",
+      "rest",
+      "rock-slide",
+      "slash",
+      "substitute",
+      "snore",
+      "curse",
+      "protect",
+      "scary-face",
+      "belly-drum",
+      "mud-slap",
+      "outrage",
+      "endure",
+      "false-swipe",
+      "swagger",
+      "fury-cutter",
+      "attract",
+      "sleep-talk",
+      "return",
+      "frustration",
+      "dynamic-punch",
+      "dragon-breath",
+      "iron-tail",
+      "metal-claw",
+      "hidden-power",
+      "sunny-day",
+      "crunch",
+      "ancient-power",
+      "rock-smash",
+      "beat-up",
+      "heat-wave",
+      "will-o-wisp",
+      "facade",
+      "focus-punch",
+      "helping-hand",
+      "brick-break",
+      "secret-power",
+      "weather-ball",
+      "air-cutter",
+      "overheat",
+      "rock-tomb",
+      "aerial-ace",
+      "dragon-claw",
+      "dragon-dance",
+      "natural-gift",
+      "fling",
+      "flare-blitz",
+      "dragon-pulse",
+      "dragon-rush",
+      "focus-blast",
+      "shadow-claw",
+      "fire-fang",
+      "captivate",
+      "hone-claws",
+      "flame-burst",
+      "flame-charge",
+      "round",
+      "echoed-voice",
+      "incinerate",
+      "acrobatics",
+      "inferno",
+      "fire-pledge",
+      "dragon-tail",
+      "work-up",
+      "confide",
+      "power-up-punch",
+      "breaking-swipe",
+      "tera-blast",
+      "temper-flare"
+    ],
+    "variants": [
+      {
+        "name": "charmander",
+        "image": "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/4.png"
+      }
+    ]
+  },
+  {
+    "pokeDex_num": 7,
+    "name": "squirtle",
+    "base_image": "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/7.png",
+    "shiny_image": "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/shiny/7.png",
+    "base_experience": 63,
+    "types": [
+      {
+        "slot": 1,
+        "type": {
+          "name": "water",
+          "url": "https://pokeapi.co/api/v2/type/11/"
+        }
+      }
+    ],
+    "stats": [
+      {
+        "name": "hp",
+        "value": 44
+      },
+      {
+        "name": "attack",
+        "value": 48
+      },
+      {
+        "name": "defense",
+        "value": 65
+      },
+      {
+        "name": "special-attack",
+        "value": 50
+      },
+      {
+        "name": "special-defense",
+        "value": 64
+      },
+      {
+        "name": "speed",
+        "value": 43
+      }
+    ],
+    "moves": [
+      "mega-punch",
+      "ice-punch",
+      "mega-kick",
+      "headbutt",
+      "tackle",
+      "body-slam",
+      "take-down",
+      "double-edge",
+      "tail-whip",
+      "bite",
+      "mist",
+      "water-gun",
+      "hydro-pump",
+      "surf",
+      "ice-beam",
+      "blizzard",
+      "bubble-beam",
+      "submission",
+      "counter",
+      "seismic-toss",
+      "strength",
+      "dig",
+      "toxic",
+      "confusion",
+      "rage",
+      "mimic",
+      "double-team",
+      "withdraw",
+      "defense-curl",
+      "haze",
+      "reflect",
+      "bide",
+      "waterfall",
+      "skull-bash",
+      "bubble",
+      "rest",
+      "rock-slide",
+      "substitute",
+      "snore",
+      "curse",
+      "flail",
+      "protect",
+      "mud-slap",
+      "foresight",
+      "icy-wind",
+      "outrage",
+      "endure",
+      "rollout",
+      "false-swipe",
+      "swagger",
+      "attract",
+      "sleep-talk",
+      "return",
+      "frustration",
+      "dynamic-punch",
+      "rapid-spin",
+      "iron-tail",
+      "hidden-power",
+      "rain-dance",
+      "mirror-coat",
+      "rock-smash",
+      "whirlpool",
+      "fake-out",
+      "hail",
+      "facade",
+      "focus-punch",
+      "follow-me",
+      "helping-hand",
+      "brick-break",
+      "yawn",
+      "refresh",
+      "secret-power",
+      "dive",
+      "mud-sport",
+      "weather-ball",
+      "rock-tomb",
+      "water-spout",
+      "muddy-water",
+      "iron-defense",
+      "mud-shot",
+      "water-pulse",
+      "gyro-ball",
+      "brine",
+      "natural-gift",
+      "fling",
+      "aqua-ring",
+      "aura-sphere",
+      "aqua-tail",
+      "dragon-pulse",
+      "zen-headbutt",
+      "captivate",
+      "aqua-jet",
+      "round",
+      "scald",
+      "shell-smash",
+      "water-pledge",
+      "work-up",
+      "confide",
+      "power-up-punch",
+      "liquidation",
+      "life-dew",
+      "flip-turn",
+      "wave-crash",
+      "tera-blast",
+      "ice-spinner",
+      "chilling-water"
+    ],
+    "variants": [
+      {
+        "name": "squirtle",
+        "image": "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/7.png"
+      }
+    ]
+  },
+  {
+    "pokeDex_num": 152,
+    "name": "chikorita",
+    "base_image": "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/152.png",
+    "shiny_image": "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/shiny/152.png",
+    "base_experience": 64,
+    "types": [
+      {
+        "slot": 1,
+        "type": {
+          "name": "grass",
+          "url": "https://pokeapi.co/api/v2/type/12/"
+        }
+      }
+    ],
+    "stats": [
+      {
+        "name": "hp",
+        "value": 45
+      },
+      {
+        "name": "attack",
+        "value": 49
+      },
+      {
+        "name": "defense",
+        "value": 65
+      },
+      {
+        "name": "special-attack",
+        "value": 49
+      },
+      {
+        "name": "special-defense",
+        "value": 65
+      },
+      {
+        "name": "speed",
+        "value": 45
+      }
+    ],
+    "moves": [
+      "swords-dance",
+      "cut",
+      "vine-whip",
+      "headbutt",
+      "tackle",
+      "body-slam",
+      "take-down",
+      "double-edge",
+      "growl",
+      "counter",
+      "leech-seed",
+      "razor-leaf",
+      "solar-beam",
+      "poison-powder",
+      "toxic",
+      "mimic",
+      "double-team",
+      "light-screen",
+      "reflect",
+      "flash",
+      "rest",
+      "substitute",
+      "snore",
+      "curse",
+      "flail",
+      "protect",
+      "mud-slap",
+      "detect",
+      "giga-drain",
+      "endure",
+      "charm",
+      "swagger",
+      "fury-cutter",
+      "attract",
+      "sleep-talk",
+      "return",
+      "frustration",
+      "safeguard",
+      "encore",
+      "sweet-scent",
+      "iron-tail",
+      "synthesis",
+      "hidden-power",
+      "sunny-day",
+      "ancient-power",
+      "facade",
+      "nature-power",
+      "helping-hand",
+      "ingrain",
+      "magic-coat",
+      "refresh",
+      "secret-power",
+      "aromatherapy",
+      "fake-tears",
+      "grass-whistle",
+      "bullet-seed",
+      "magical-leaf",
+      "natural-gift",
+      "wring-out",
+      "worry-seed",
+      "seed-bomb",
+      "energy-ball",
+      "leaf-storm",
+      "captivate",
+      "grass-knot",
+      "round",
+      "echoed-voice",
+      "heal-pulse",
+      "grass-pledge",
+      "work-up",
+      "grassy-terrain",
+      "confide",
+      "solar-blade",
+      "grassy-glide",
+      "tera-blast",
+      "trailblaze"
+    ],
+    "variants": [
+      {
+        "name": "chikorita",
+        "image": "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/152.png"
+      }
+    ]
+  },
+  {
+    "pokeDex_num": 155,
+    "name": "cyndaquil",
+    "base_image": "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/155.png",
+    "shiny_image": "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/shiny/155.png",
+    "base_experience": 62,
+    "types": [
+      {
+        "slot": 1,
+        "type": {
+          "name": "fire",
+          "url": "https://pokeapi.co/api/v2/type/10/"
+        }
+      }
+    ],
+    "stats": [
+      {
+        "name": "hp",
+        "value": 39
+      },
+      {
+        "name": "attack",
+        "value": 52
+      },
+      {
+        "name": "defense",
+        "value": 43
+      },
+      {
+        "name": "special-attack",
+        "value": 60
+      },
+      {
+        "name": "special-defense",
+        "value": 50
+      },
+      {
+        "name": "speed",
+        "value": 65
+      }
+    ],
+    "moves": [
+      "cut",
+      "double-kick",
+      "headbutt",
+      "tackle",
+      "body-slam",
+      "take-down",
+      "thrash",
+      "double-edge",
+      "leer",
+      "roar",
+      "ember",
+      "flamethrower",
+      "submission",
+      "fire-spin",
+      "dig",
+      "toxic",
+      "quick-attack",
+      "mimic",
+      "double-team",
+      "smokescreen",
+      "defense-curl",
+      "fire-blast",
+      "swift",
+      "fury-swipes",
+      "rest",
+      "substitute",
+      "flame-wheel",
+      "snore",
+      "curse",
+      "reversal",
+      "protect",
+      "mud-slap",
+      "foresight",
+      "detect",
+      "endure",
+      "rollout",
+      "swagger",
+      "attract",
+      "sleep-talk",
+      "return",
+      "frustration",
+      "iron-tail",
+      "hidden-power",
+      "sunny-day",
+      "heat-wave",
+      "will-o-wisp",
+      "facade",
+      "nature-power",
+      "eruption",
+      "secret-power",
+      "crush-claw",
+      "overheat",
+      "extrasensory",
+      "aerial-ace",
+      "howl",
+      "covet",
+      "natural-gift",
+      "flare-blitz",
+      "fire-fang",
+      "zen-headbutt",
+      "lava-plume",
+      "iron-head",
+      "captivate",
+      "flame-burst",
+      "flame-charge",
+      "round",
+      "incinerate",
+      "inferno",
+      "fire-pledge",
+      "work-up",
+      "wild-charge",
+      "play-rough",
+      "confide",
+      "burn-up",
+      "burning-jealousy",
+      "tera-blast",
+      "temper-flare"
+    ],
+    "variants": [
+      {
+        "name": "cyndaquil",
+        "image": "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/155.png"
+      }
+    ]
+  },
+  {
+    "pokeDex_num": 158,
+    "name": "totodile",
+    "base_image": "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/158.png",
+    "shiny_image": "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/shiny/158.png",
+    "base_experience": 63,
+    "types": [
+      {
+        "slot": 1,
+        "type": {
+          "name": "water",
+          "url": "https://pokeapi.co/api/v2/type/11/"
+        }
+      }
+    ],
+    "stats": [
+      {
+        "name": "hp",
+        "value": 50
+      },
+      {
+        "name": "attack",
+        "value": 65
+      },
+      {
+        "name": "defense",
+        "value": 64
+      },
+      {
+        "name": "special-attack",
+        "value": 44
+      },
+      {
+        "name": "special-defense",
+        "value": 48
+      },
+      {
+        "name": "speed",
+        "value": 43
+      }
+    ],
+    "moves": [
+      "mega-punch",
+      "ice-punch",
+      "scratch",
+      "razor-wind",
+      "swords-dance",
+      "cut",
+      "mega-kick",
+      "headbutt",
+      "body-slam",
+      "take-down",
+      "thrash",
+      "double-edge",
+      "leer",
+      "bite",
+      "water-gun",
+      "hydro-pump",
+      "surf",
+      "ice-beam",
+      "blizzard",
+      "low-kick",
+      "counter",
+      "seismic-toss",
+      "dig",
+      "toxic",
+      "rage",
+      "mimic",
+      "screech",
+      "double-team",
+      "waterfall",
+      "rest",
+      "rock-slide",
+      "slash",
+      "substitute",
+      "thief",
+      "snore",
+      "curse",
+      "flail",
+      "spite",
+      "protect",
+      "scary-face",
+      "mud-slap",
+      "icy-wind",
+      "detect",
+      "endure",
+      "swagger",
+      "attract",
+      "sleep-talk",
+      "return",
+      "frustration",
+      "dynamic-punch",
+      "iron-tail",
+      "metal-claw",
+      "hidden-power",
+      "rain-dance",
+      "crunch",
+      "ancient-power",
+      "whirlpool",
+      "uproar",
+      "hail",
+      "flatter",
+      "facade",
+      "focus-punch",
+      "superpower",
+      "brick-break",
+      "endeavor",
+      "secret-power",
+      "dive",
+      "mud-sport",
+      "fake-tears",
+      "rock-tomb",
+      "muddy-water",
+      "aerial-ace",
+      "block",
+      "dragon-claw",
+      "water-sport",
+      "dragon-dance",
+      "water-pulse",
+      "natural-gift",
+      "fling",
+      "aqua-tail",
+      "shadow-claw",
+      "ice-fang",
+      "captivate",
+      "aqua-jet",
+      "hone-claws",
+      "round",
+      "chip-away",
+      "scald",
+      "water-pledge",
+      "work-up",
+      "confide",
+      "power-up-punch",
+      "liquidation",
+      "breaking-swipe",
+      "flip-turn",
+      "tera-blast",
+      "trailblaze",
+      "chilling-water"
+    ],
+    "variants": [
+      {
+        "name": "totodile",
+        "image": "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/158.png"
+      }
+    ]
+  },
+  {
+    "pokeDex_num": 252,
+    "name": "treecko",
+    "base_image": "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/252.png",
+    "shiny_image": "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/shiny/252.png",
+    "base_experience": 62,
+    "types": [
+      {
+        "slot": 1,
+        "type": {
+          "name": "grass",
+          "url": "https://pokeapi.co/api/v2/type/12/"
+        }
+      }
+    ],
+    "stats": [
+      {
+        "name": "hp",
+        "value": 40
+      },
+      {
+        "name": "attack",
+        "value": 45
+      },
+      {
+        "name": "defense",
+        "value": 35
+      },
+      {
+        "name": "special-attack",
+        "value": 65
+      },
+      {
+        "name": "special-defense",
+        "value": 55
+      },
+      {
+        "name": "speed",
+        "value": 70
+      }
+    ],
+    "moves": [
+      "pound",
+      "mega-punch",
+      "thunder-punch",
+      "razor-wind",
+      "swords-dance",
+      "cut",
+      "slam",
+      "double-kick",
+      "mega-kick",
+      "headbutt",
+      "body-slam",
+      "take-down",
+      "double-edge",
+      "leer",
+      "low-kick",
+      "counter",
+      "seismic-toss",
+      "strength",
+      "absorb",
+      "mega-drain",
+      "leech-seed",
+      "solar-beam",
+      "dig",
+      "toxic",
+      "agility",
+      "quick-attack",
+      "mimic",
+      "screech",
+      "double-team",
+      "swift",
+      "flash",
+      "rest",
+      "rock-slide",
+      "slash",
+      "substitute",
+      "thief",
+      "snore",
+      "protect",
+      "mud-slap",
+      "detect",
+      "giga-drain",
+      "endure",
+      "swagger",
+      "fury-cutter",
+      "attract",
+      "sleep-talk",
+      "return",
+      "frustration",
+      "safeguard",
+      "dynamic-punch",
+      "dragon-breath",
+      "pursuit",
+      "iron-tail",
+      "synthesis",
+      "hidden-power",
+      "sunny-day",
+      "crunch",
+      "rock-smash",
+      "facade",
+      "focus-punch",
+      "nature-power",
+      "helping-hand",
+      "brick-break",
+      "endeavor",
+      "secret-power",
+      "mud-sport",
+      "crush-claw",
+      "rock-tomb",
+      "grass-whistle",
+      "bullet-seed",
+      "aerial-ace",
+      "magical-leaf",
+      "natural-gift",
+      "assurance",
+      "fling",
+      "worry-seed",
+      "night-slash",
+      "seed-bomb",
+      "drain-punch",
+      "energy-ball",
+      "leaf-storm",
+      "captivate",
+      "grass-knot",
+      "round",
+      "quick-guard",
+      "acrobatics",
+      "grass-pledge",
+      "dragon-tail",
+      "work-up",
+      "grassy-terrain",
+      "confide",
+      "power-up-punch",
+      "leafage",
+      "breaking-swipe",
+      "grassy-glide",
+      "tera-blast",
+      "trailblaze",
+      "upper-hand"
+    ],
+    "variants": [
+      {
+        "name": "treecko",
+        "image": "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/252.png"
+      }
+    ]
+  },
+  {
+    "pokeDex_num": 255,
+    "name": "torchic",
+    "base_image": "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/255.png",
+    "shiny_image": "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/shiny/255.png",
+    "base_experience": 62,
+    "types": [
+      {
+        "slot": 1,
+        "type": {
+          "name": "fire",
+          "url": "https://pokeapi.co/api/v2/type/10/"
+        }
+      }
+    ],
+    "stats": [
+      {
+        "name": "hp",
+        "value": 45
+      },
+      {
+        "name": "attack",
+        "value": 60
+      },
+      {
+        "name": "defense",
+        "value": 40
+      },
+      {
+        "name": "special-attack",
+        "value": 70
+      },
+      {
+        "name": "special-defense",
+        "value": 50
+      },
+      {
+        "name": "speed",
+        "value": 45
+      }
+    ],
+    "moves": [
+      "mega-punch",
+      "scratch",
+      "swords-dance",
+      "cut",
+      "mega-kick",
+      "sand-attack",
+      "headbutt",
+      "body-slam",
+      "take-down",
+      "double-edge",
+      "growl",
+      "ember",
+      "flamethrower",
+      "peck",
+      "low-kick",
+      "counter",
+      "seismic-toss",
+      "strength",
+      "fire-spin",
+      "dig",
+      "toxic",
+      "agility",
+      "quick-attack",
+      "mimic",
+      "double-team",
+      "focus-energy",
+      "mirror-move",
+      "fire-blast",
+      "swift",
+      "rest",
+      "rock-slide",
+      "slash",
+      "substitute",
+      "snore",
+      "curse",
+      "reversal",
+      "protect",
+      "mud-slap",
+      "detect",
+      "endure",
+      "swagger",
+      "attract",
+      "sleep-talk",
+      "return",
+      "frustration",
+      "baton-pass",
+      "hidden-power",
+      "sunny-day",
+      "rock-smash",
+      "uproar",
+      "heat-wave",
+      "will-o-wisp",
+      "facade",
+      "smelling-salts",
+      "helping-hand",
+      "secret-power",
+      "feather-dance",
+      "crush-claw",
+      "overheat",
+      "rock-tomb",
+      "aerial-ace",
+      "bounce",
+      "natural-gift",
+      "feint",
+      "assurance",
+      "last-resort",
+      "flare-blitz",
+      "night-slash",
+      "shadow-claw",
+      "defog",
+      "captivate",
+      "hone-claws",
+      "flame-burst",
+      "flame-charge",
+      "round",
+      "echoed-voice",
+      "incinerate",
+      "fire-pledge",
+      "work-up",
+      "confide",
+      "tera-blast",
+      "temper-flare"
+    ],
+    "variants": [
+      {
+        "name": "torchic",
+        "image": "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/255.png"
+      }
+    ]
+  },
+  {
+    "pokeDex_num": 258,
+    "name": "mudkip",
+    "base_image": "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/258.png",
+    "shiny_image": "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/shiny/258.png",
+    "base_experience": 62,
+    "types": [
+      {
+        "slot": 1,
+        "type": {
+          "name": "water",
+          "url": "https://pokeapi.co/api/v2/type/11/"
+        }
+      }
+    ],
+    "stats": [
+      {
+        "name": "hp",
+        "value": 50
+      },
+      {
+        "name": "attack",
+        "value": 70
+      },
+      {
+        "name": "defense",
+        "value": 50
+      },
+      {
+        "name": "special-attack",
+        "value": 50
+      },
+      {
+        "name": "special-defense",
+        "value": 50
+      },
+      {
+        "name": "speed",
+        "value": 40
+      }
+    ],
+    "moves": [
+      "stomp",
+      "headbutt",
+      "tackle",
+      "body-slam",
+      "take-down",
+      "double-edge",
+      "bite",
+      "growl",
+      "roar",
+      "supersonic",
+      "water-gun",
+      "hydro-pump",
+      "surf",
+      "ice-beam",
+      "blizzard",
+      "low-kick",
+      "counter",
+      "strength",
+      "rock-throw",
+      "dig",
+      "toxic",
+      "mimic",
+      "screech",
+      "double-team",
+      "defense-curl",
+      "barrier",
+      "bide",
+      "sludge",
+      "waterfall",
+      "amnesia",
+      "rest",
+      "rock-slide",
+      "substitute",
+      "snore",
+      "curse",
+      "protect",
+      "mud-slap",
+      "foresight",
+      "icy-wind",
+      "endure",
+      "rollout",
+      "swagger",
+      "attract",
+      "sleep-talk",
+      "return",
+      "frustration",
+      "iron-tail",
+      "hidden-power",
+      "rain-dance",
+      "mirror-coat",
+      "ancient-power",
+      "rock-smash",
+      "whirlpool",
+      "uproar",
+      "hail",
+      "facade",
+      "superpower",
+      "yawn",
+      "endeavor",
+      "refresh",
+      "secret-power",
+      "dive",
+      "mud-sport",
+      "ice-ball",
+      "rock-tomb",
+      "muddy-water",
+      "mud-shot",
+      "water-pulse",
+      "natural-gift",
+      "aqua-tail",
+      "earth-power",
+      "avalanche",
+      "mud-bomb",
+      "captivate",
+      "wide-guard",
+      "sludge-wave",
+      "round",
+      "echoed-voice",
+      "scald",
+      "water-pledge",
+      "work-up",
+      "confide",
+      "liquidation",
+      "tera-blast",
+      "chilling-water"
+    ],
+    "variants": [
+      {
+        "name": "mudkip",
+        "image": "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/258.png"
+      }
+    ]
+  },
+  {
+    "pokeDex_num": 387,
+    "name": "turtwig",
+    "base_image": "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/387.png",
+    "shiny_image": "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/shiny/387.png",
+    "base_experience": 64,
+    "types": [
+      {
+        "slot": 1,
+        "type": {
+          "name": "grass",
+          "url": "https://pokeapi.co/api/v2/type/12/"
+        }
+      }
+    ],
+    "stats": [
+      {
+        "name": "hp",
+        "value": 55
+      },
+      {
+        "name": "attack",
+        "value": 68
+      },
+      {
+        "name": "defense",
+        "value": 64
+      },
+      {
+        "name": "special-attack",
+        "value": 45
+      },
+      {
+        "name": "special-defense",
+        "value": 55
+      },
+      {
+        "name": "speed",
+        "value": 31
+      }
+    ],
+    "moves": [
+      "swords-dance",
+      "cut",
+      "headbutt",
+      "tackle",
+      "body-slam",
+      "take-down",
+      "thrash",
+      "double-edge",
+      "bite",
+      "roar",
+      "strength",
+      "absorb",
+      "mega-drain",
+      "leech-seed",
+      "growth",
+      "razor-leaf",
+      "solar-beam",
+      "sleep-powder",
+      "toxic",
+      "double-team",
+      "withdraw",
+      "light-screen",
+      "reflect",
+      "amnesia",
+      "flash",
+      "rest",
+      "substitute",
+      "snore",
+      "curse",
+      "protect",
+      "mud-slap",
+      "giga-drain",
+      "endure",
+      "swagger",
+      "attract",
+      "sleep-talk",
+      "return",
+      "frustration",
+      "safeguard",
+      "iron-tail",
+      "synthesis",
+      "hidden-power",
+      "sunny-day",
+      "crunch",
+      "rock-smash",
+      "stockpile",
+      "spit-up",
+      "swallow",
+      "facade",
+      "nature-power",
+      "superpower",
+      "secret-power",
+      "tickle",
+      "sand-tomb",
+      "bullet-seed",
+      "mud-shot",
+      "magical-leaf",
+      "leaf-blade",
+      "natural-gift",
+      "worry-seed",
+      "seed-bomb",
+      "energy-ball",
+      "earth-power",
+      "zen-headbutt",
+      "rock-climb",
+      "leaf-storm",
+      "iron-head",
+      "captivate",
+      "stealth-rock",
+      "grass-knot",
+      "wide-guard",
+      "smack-down",
+      "heavy-slam",
+      "round",
+      "shell-smash",
+      "grass-pledge",
+      "bulldoze",
+      "work-up",
+      "grassy-terrain",
+      "confide",
+      "leafage",
+      "grassy-glide",
+      "tera-blast",
+      "trailblaze"
+    ],
+    "variants": [
+      {
+        "name": "turtwig",
+        "image": "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/387.png"
+      }
+    ]
+  },
+  {
+    "pokeDex_num": 390,
+    "name": "chimchar",
+    "base_image": "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/390.png",
+    "shiny_image": "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/shiny/390.png",
+    "base_experience": 62,
+    "types": [
+      {
+        "slot": 1,
+        "type": {
+          "name": "fire",
+          "url": "https://pokeapi.co/api/v2/type/10/"
+        }
+      }
+    ],
+    "stats": [
+      {
+        "name": "hp",
+        "value": 44
+      },
+      {
+        "name": "attack",
+        "value": 58
+      },
+      {
+        "name": "defense",
+        "value": 44
+      },
+      {
+        "name": "special-attack",
+        "value": 58
+      },
+      {
+        "name": "special-defense",
+        "value": 44
+      },
+      {
+        "name": "speed",
+        "value": 61
+      }
+    ],
+    "moves": [
+      "fire-punch",
+      "thunder-punch",
+      "scratch",
+      "swords-dance",
+      "cut",
+      "double-kick",
+      "headbutt",
+      "tackle",
+      "take-down",
+      "double-edge",
+      "leer",
+      "ember",
+      "flamethrower",
+      "submission",
+      "low-kick",
+      "counter",
+      "strength",
+      "fire-spin",
+      "dig",
+      "toxic",
+      "agility",
+      "double-team",
+      "focus-energy",
+      "metronome",
+      "fire-blast",
+      "swift",
+      "fury-swipes",
+      "rest",
+      "rock-slide",
+      "substitute",
+      "thief",
+      "flame-wheel",
+      "snore",
+      "protect",
+      "mud-slap",
+      "endure",
+      "rollout",
+      "swagger",
+      "attract",
+      "sleep-talk",
+      "return",
+      "frustration",
+      "encore",
+      "iron-tail",
+      "hidden-power",
+      "sunny-day",
+      "psych-up",
+      "rock-smash",
+      "fake-out",
+      "uproar",
+      "heat-wave",
+      "torment",
+      "will-o-wisp",
+      "facade",
+      "focus-punch",
+      "taunt",
+      "helping-hand",
+      "role-play",
+      "assist",
+      "brick-break",
+      "knock-off",
+      "endeavor",
+      "secret-power",
+      "blaze-kick",
+      "slack-off",
+      "fake-tears",
+      "overheat",
+      "rock-tomb",
+      "aerial-ace",
+      "bulk-up",
+      "covet",
+      "natural-gift",
+      "u-turn",
+      "fling",
+      "flare-blitz",
+      "poison-jab",
+      "vacuum-wave",
+      "switcheroo",
+      "nasty-plot",
+      "shadow-claw",
+      "zen-headbutt",
+      "rock-climb",
+      "gunk-shot",
+      "captivate",
+      "stealth-rock",
+      "grass-knot",
+      "hone-claws",
+      "flame-charge",
+      "low-sweep",
+      "round",
+      "quick-guard",
+      "incinerate",
+      "acrobatics",
+      "fire-pledge",
+      "work-up",
+      "confide",
+      "power-up-punch",
+      "burning-jealousy",
+      "tera-blast",
+      "temper-flare"
+    ],
+    "variants": [
+      {
+        "name": "chimchar",
+        "image": "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/390.png"
+      }
+    ]
+  },
+  {
+    "pokeDex_num": 393,
+    "name": "piplup",
+    "base_image": "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/393.png",
+    "shiny_image": "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/shiny/393.png",
+    "base_experience": 63,
+    "types": [
+      {
+        "slot": 1,
+        "type": {
+          "name": "water",
+          "url": "https://pokeapi.co/api/v2/type/11/"
+        }
+      }
+    ],
+    "stats": [
+      {
+        "name": "hp",
+        "value": 53
+      },
+      {
+        "name": "attack",
+        "value": 51
+      },
+      {
+        "name": "defense",
+        "value": 53
+      },
+      {
+        "name": "special-attack",
+        "value": 61
+      },
+      {
+        "name": "special-defense",
+        "value": 56
+      },
+      {
+        "name": "speed",
+        "value": 40
+      }
+    ],
+    "moves": [
+      "pound",
+      "cut",
+      "headbutt",
+      "fury-attack",
+      "tackle",
+      "double-edge",
+      "growl",
+      "supersonic",
+      "mist",
+      "water-gun",
+      "hydro-pump",
+      "surf",
+      "ice-beam",
+      "blizzard",
+      "bubble-beam",
+      "peck",
+      "drill-peck",
+      "dig",
+      "toxic",
+      "agility",
+      "double-team",
+      "haze",
+      "bide",
+      "waterfall",
+      "swift",
+      "bubble",
+      "rest",
+      "substitute",
+      "snore",
+      "flail",
+      "protect",
+      "mud-slap",
+      "icy-wind",
+      "endure",
+      "charm",
+      "swagger",
+      "attract",
+      "sleep-talk",
+      "return",
+      "frustration",
+      "hidden-power",
+      "rain-dance",
+      "psych-up",
+      "whirlpool",
+      "hail",
+      "facade",
+      "helping-hand",
+      "brick-break",
+      "yawn",
+      "secret-power",
+      "dive",
+      "feather-dance",
+      "mud-sport",
+      "weather-ball",
+      "rock-tomb",
+      "signal-beam",
+      "aerial-ace",
+      "covet",
+      "water-sport",
+      "water-pulse",
+      "roost",
+      "brine",
+      "natural-gift",
+      "pluck",
+      "fling",
+      "aqua-ring",
+      "defog",
+      "captivate",
+      "stealth-rock",
+      "grass-knot",
+      "double-hit",
+      "round",
+      "echoed-voice",
+      "scald",
+      "quash",
+      "water-pledge",
+      "work-up",
+      "disarming-voice",
+      "confide",
+      "power-trip",
+      "liquidation",
+      "flip-turn",
+      "triple-axel",
+      "tera-blast",
+      "ice-spinner",
+      "snowscape",
+      "chilling-water"
+    ],
+    "variants": [
+      {
+        "name": "piplup",
+        "image": "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/393.png"
+      }
+    ]
+  },
+  {
+    "pokeDex_num": 495,
+    "name": "snivy",
+    "base_image": "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/495.png",
+    "shiny_image": "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/shiny/495.png",
+    "base_experience": 62,
+    "types": [
+      {
+        "slot": 1,
+        "type": {
+          "name": "grass",
+          "url": "https://pokeapi.co/api/v2/type/12/"
+        }
+      }
+    ],
+    "stats": [
+      {
+        "name": "hp",
+        "value": 45
+      },
+      {
+        "name": "attack",
+        "value": 45
+      },
+      {
+        "name": "defense",
+        "value": 55
+      },
+      {
+        "name": "special-attack",
+        "value": 45
+      },
+      {
+        "name": "special-defense",
+        "value": 55
+      },
+      {
+        "name": "speed",
+        "value": 63
+      }
+    ],
+    "moves": [
+      "swords-dance",
+      "cut",
+      "bind",
+      "slam",
+      "vine-whip",
+      "tackle",
+      "wrap",
+      "take-down",
+      "double-edge",
+      "leer",
+      "mega-drain",
+      "leech-seed",
+      "growth",
+      "solar-beam",
+      "toxic",
+      "double-team",
+      "light-screen",
+      "reflect",
+      "swift",
+      "glare",
+      "flash",
+      "rest",
+      "substitute",
+      "snore",
+      "protect",
+      "giga-drain",
+      "endure",
+      "swagger",
+      "mean-look",
+      "attract",
+      "sleep-talk",
+      "return",
+      "frustration",
+      "safeguard",
+      "pursuit",
+      "sweet-scent",
+      "iron-tail",
+      "synthesis",
+      "hidden-power",
+      "twister",
+      "sunny-day",
+      "mirror-coat",
+      "torment",
+      "facade",
+      "nature-power",
+      "taunt",
+      "helping-hand",
+      "knock-off",
+      "snatch",
+      "secret-power",
+      "bullet-seed",
+      "aerial-ace",
+      "magical-leaf",
+      "calm-mind",
+      "leaf-blade",
+      "natural-gift",
+      "wring-out",
+      "gastro-acid",
+      "worry-seed",
+      "aqua-tail",
+      "seed-bomb",
+      "energy-ball",
+      "defog",
+      "leaf-storm",
+      "captivate",
+      "grass-knot",
+      "coil",
+      "round",
+      "grass-pledge",
+      "work-up",
+      "leaf-tornado",
+      "petal-blizzard",
+      "grassy-terrain",
+      "confide",
+      "grassy-glide",
+      "tera-blast",
+      "trailblaze"
+    ],
+    "variants": [
+      {
+        "name": "snivy",
+        "image": "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/495.png"
+      }
+    ]
+  },
+  {
+    "pokeDex_num": 498,
+    "name": "tepig",
+    "base_image": "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/498.png",
+    "shiny_image": "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/shiny/498.png",
+    "base_experience": 62,
+    "types": [
+      {
+        "slot": 1,
+        "type": {
+          "name": "fire",
+          "url": "https://pokeapi.co/api/v2/type/10/"
+        }
+      }
+    ],
+    "stats": [
+      {
+        "name": "hp",
+        "value": 65
+      },
+      {
+        "name": "attack",
+        "value": 63
+      },
+      {
+        "name": "defense",
+        "value": 45
+      },
+      {
+        "name": "special-attack",
+        "value": 45
+      },
+      {
+        "name": "special-defense",
+        "value": 45
+      },
+      {
+        "name": "speed",
+        "value": 45
+      }
+    ],
+    "moves": [
+      "fire-punch",
+      "tackle",
+      "body-slam",
+      "take-down",
+      "thrash",
+      "double-edge",
+      "tail-whip",
+      "roar",
+      "ember",
+      "flamethrower",
+      "strength",
+      "solar-beam",
+      "fire-spin",
+      "dig",
+      "toxic",
+      "double-team",
+      "defense-curl",
+      "smog",
+      "fire-blast",
+      "rest",
+      "substitute",
+      "snore",
+      "curse",
+      "protect",
+      "mud-slap",
+      "endure",
+      "rollout",
+      "swagger",
+      "attract",
+      "sleep-talk",
+      "return",
+      "frustration",
+      "magnitude",
+      "iron-tail",
+      "hidden-power",
+      "sunny-day",
+      "rock-smash",
+      "heat-wave",
+      "will-o-wisp",
+      "facade",
+      "taunt",
+      "helping-hand",
+      "superpower",
+      "yawn",
+      "endeavor",
+      "secret-power",
+      "overheat",
+      "odor-sleuth",
+      "rock-tomb",
+      "covet",
+      "gyro-ball",
+      "assurance",
+      "sucker-punch",
+      "flare-blitz",
+      "zen-headbutt",
+      "grass-knot",
+      "head-smash",
+      "heavy-slam",
+      "flame-charge",
+      "round",
+      "echoed-voice",
+      "incinerate",
+      "fire-pledge",
+      "work-up",
+      "wild-charge",
+      "heat-crash",
+      "confide",
+      "burn-up",
+      "stomping-tantrum",
+      "tera-blast",
+      "trailblaze",
+      "temper-flare"
+    ],
+    "variants": [
+      {
+        "name": "tepig",
+        "image": "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/498.png"
+      }
+    ]
+  },
+  {
+    "pokeDex_num": 501,
+    "name": "oshawott",
+    "base_image": "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/501.png",
+    "shiny_image": "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/shiny/501.png",
+    "base_experience": 62,
+    "types": [
+      {
+        "slot": 1,
+        "type": {
+          "name": "water",
+          "url": "https://pokeapi.co/api/v2/type/11/"
+        }
+      }
+    ],
+    "stats": [
+      {
+        "name": "hp",
+        "value": 55
+      },
+      {
+        "name": "attack",
+        "value": 55
+      },
+      {
+        "name": "defense",
+        "value": 45
+      },
+      {
+        "name": "special-attack",
+        "value": 63
+      },
+      {
+        "name": "special-defense",
+        "value": 45
+      },
+      {
+        "name": "speed",
+        "value": 45
+      }
+    ],
+    "moves": [
+      "swords-dance",
+      "cut",
+      "tackle",
+      "take-down",
+      "tail-whip",
+      "water-gun",
+      "hydro-pump",
+      "surf",
+      "ice-beam",
+      "blizzard",
+      "dig",
+      "toxic",
+      "screech",
+      "double-team",
+      "focus-energy",
+      "waterfall",
+      "swift",
+      "rest",
+      "slash",
+      "substitute",
+      "thief",
+      "snore",
+      "protect",
+      "icy-wind",
+      "detect",
+      "endure",
+      "false-swipe",
+      "swagger",
+      "fury-cutter",
+      "attract",
+      "sleep-talk",
+      "return",
+      "frustration",
+      "encore",
+      "iron-tail",
+      "hidden-power",
+      "rain-dance",
+      "rock-smash",
+      "whirlpool",
+      "hail",
+      "facade",
+      "taunt",
+      "helping-hand",
+      "revenge",
+      "knock-off",
+      "secret-power",
+      "dive",
+      "aerial-ace",
+      "covet",
+      "water-sport",
+      "water-pulse",
+      "brine",
+      "assurance",
+      "fling",
+      "trump-card",
+      "copycat",
+      "night-slash",
+      "aqua-tail",
+      "air-slash",
+      "x-scissor",
+      "avalanche",
+      "grass-knot",
+      "aqua-jet",
+      "soak",
+      "round",
+      "scald",
+      "retaliate",
+      "water-pledge",
+      "work-up",
+      "sacred-sword",
+      "razor-shell",
+      "confide",
+      "liquidation",
+      "flip-turn",
+      "tera-blast",
+      "snowscape",
+      "chilling-water",
+      "aqua-cutter"
+    ],
+    "variants": [
+      {
+        "name": "oshawott",
+        "image": "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/501.png"
+      }
+    ]
+  },
+  {
+    "pokeDex_num": 650,
+    "name": "chespin",
+    "base_image": "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/650.png",
+    "shiny_image": "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/shiny/650.png",
+    "base_experience": 63,
+    "types": [
+      {
+        "slot": 1,
+        "type": {
+          "name": "grass",
+          "url": "https://pokeapi.co/api/v2/type/12/"
+        }
+      }
+    ],
+    "stats": [
+      {
+        "name": "hp",
+        "value": 56
+      },
+      {
+        "name": "attack",
+        "value": 61
+      },
+      {
+        "name": "defense",
+        "value": 65
+      },
+      {
+        "name": "special-attack",
+        "value": 48
+      },
+      {
+        "name": "special-defense",
+        "value": 45
+      },
+      {
+        "name": "speed",
+        "value": 38
+      }
+    ],
+    "moves": [
+      "thunder-punch",
+      "swords-dance",
+      "cut",
+      "vine-whip",
+      "tackle",
+      "body-slam",
+      "take-down",
+      "pin-missile",
+      "bite",
+      "growl",
+      "roar",
+      "low-kick",
+      "strength",
+      "leech-seed",
+      "solar-beam",
+      "dig",
+      "toxic",
+      "double-team",
+      "defense-curl",
+      "reflect",
+      "swift",
+      "flash",
+      "rest",
+      "rock-slide",
+      "super-fang",
+      "substitute",
+      "snore",
+      "curse",
+      "protect",
+      "belly-drum",
+      "sludge-bomb",
+      "spikes",
+      "giga-drain",
+      "endure",
+      "rollout",
+      "swagger",
+      "attract",
+      "sleep-talk",
+      "return",
+      "frustration",
+      "pain-split",
+      "iron-tail",
+      "metal-claw",
+      "synthesis",
+      "hidden-power",
+      "rain-dance",
+      "sunny-day",
+      "rock-smash",
+      "facade",
+      "focus-punch",
+      "nature-power",
+      "taunt",
+      "helping-hand",
+      "superpower",
+      "brick-break",
+      "endeavor",
+      "secret-power",
+      "rock-tomb",
+      "bullet-seed",
+      "aerial-ace",
+      "iron-defense",
+      "bulk-up",
+      "mud-shot",
+      "magical-leaf",
+      "gyro-ball",
+      "payback",
+      "fling",
+      "worry-seed",
+      "poison-jab",
+      "seed-bomb",
+      "drain-punch",
+      "energy-ball",
+      "shadow-claw",
+      "zen-headbutt",
+      "leaf-storm",
+      "iron-head",
+      "stone-edge",
+      "grass-knot",
+      "wood-hammer",
+      "wide-guard",
+      "smack-down",
+      "low-sweep",
+      "round",
+      "quick-guard",
+      "retaliate",
+      "grass-pledge",
+      "bulldoze",
+      "work-up",
+      "dual-chop",
+      "grassy-terrain",
+      "confide",
+      "power-up-punch",
+      "stomping-tantrum",
+      "grassy-glide",
+      "tera-blast",
+      "trailblaze"
+    ],
+    "variants": [
+      {
+        "name": "chespin",
+        "image": "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/650.png"
+      }
+    ]
+  },
+  {
+    "pokeDex_num": 653,
+    "name": "fennekin",
+    "base_image": "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/653.png",
+    "shiny_image": "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/shiny/653.png",
+    "base_experience": 61,
+    "types": [
+      {
+        "slot": 1,
+        "type": {
+          "name": "fire",
+          "url": "https://pokeapi.co/api/v2/type/10/"
+        }
+      }
+    ],
+    "stats": [
+      {
+        "name": "hp",
+        "value": 40
+      },
+      {
+        "name": "attack",
+        "value": 45
+      },
+      {
+        "name": "defense",
+        "value": 40
+      },
+      {
+        "name": "special-attack",
+        "value": 62
+      },
+      {
+        "name": "special-defense",
+        "value": 60
+      },
+      {
+        "name": "speed",
+        "value": 60
+      }
+    ],
+    "moves": [
+      "scratch",
+      "cut",
+      "take-down",
+      "tail-whip",
+      "ember",
+      "flamethrower",
+      "psybeam",
+      "solar-beam",
+      "fire-spin",
+      "toxic",
+      "psychic",
+      "hypnosis",
+      "agility",
+      "double-team",
+      "light-screen",
+      "fire-blast",
+      "swift",
+      "dream-eater",
+      "rest",
+      "substitute",
+      "thief",
+      "snore",
+      "protect",
+      "mud-slap",
+      "endure",
+      "charm",
+      "swagger",
+      "attract",
+      "sleep-talk",
+      "return",
+      "frustration",
+      "safeguard",
+      "encore",
+      "iron-tail",
+      "hidden-power",
+      "rain-dance",
+      "sunny-day",
+      "psych-up",
+      "heat-wave",
+      "will-o-wisp",
+      "facade",
+      "helping-hand",
+      "trick",
+      "wish",
+      "magic-coat",
+      "skill-swap",
+      "imprison",
+      "secret-power",
+      "overheat",
+      "howl",
+      "mud-shot",
+      "covet",
+      "calm-mind",
+      "embargo",
+      "lucky-chant",
+      "copycat",
+      "flare-blitz",
+      "trick-room",
+      "grass-knot",
+      "psyshock",
+      "magic-room",
+      "flame-charge",
+      "foul-play",
+      "round",
+      "echoed-voice",
+      "stored-power",
+      "incinerate",
+      "fire-pledge",
+      "work-up",
+      "confide",
+      "power-up-punch",
+      "psychic-terrain",
+      "burning-jealousy",
+      "tera-blast"
+    ],
+    "variants": [
+      {
+        "name": "fennekin",
+        "image": "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/653.png"
+      }
+    ]
+  },
+  {
+    "pokeDex_num": 656,
+    "name": "froakie",
+    "base_image": "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/656.png",
+    "shiny_image": "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/shiny/656.png",
+    "base_experience": 63,
+    "types": [
+      {
+        "slot": 1,
+        "type": {
+          "name": "water",
+          "url": "https://pokeapi.co/api/v2/type/11/"
+        }
+      }
+    ],
+    "stats": [
+      {
+        "name": "hp",
+        "value": 41
+      },
+      {
+        "name": "attack",
+        "value": 56
+      },
+      {
+        "name": "defense",
+        "value": 40
+      },
+      {
+        "name": "special-attack",
+        "value": 62
+      },
+      {
+        "name": "special-defense",
+        "value": 44
+      },
+      {
+        "name": "speed",
+        "value": 71
+      }
+    ],
+    "moves": [
+      "pound",
+      "cut",
+      "take-down",
+      "growl",
+      "water-gun",
+      "hydro-pump",
+      "surf",
+      "ice-beam",
+      "blizzard",
+      "counter",
+      "strength",
+      "dig",
+      "toxic",
+      "quick-attack",
+      "double-team",
+      "smokescreen",
+      "lick",
+      "waterfall",
+      "swift",
+      "bubble",
+      "rest",
+      "rock-slide",
+      "substitute",
+      "thief",
+      "mind-reader",
+      "snore",
+      "spite",
+      "protect",
+      "mud-slap",
+      "spikes",
+      "icy-wind",
+      "endure",
+      "false-swipe",
+      "swagger",
+      "attract",
+      "sleep-talk",
+      "return",
+      "frustration",
+      "hidden-power",
+      "rain-dance",
+      "rock-smash",
+      "facade",
+      "taunt",
+      "helping-hand",
+      "role-play",
+      "snatch",
+      "secret-power",
+      "dive",
+      "camouflage",
+      "mud-sport",
+      "rock-tomb",
+      "aerial-ace",
+      "bounce",
+      "mud-shot",
+      "water-sport",
+      "water-pulse",
+      "u-turn",
+      "fling",
+      "toxic-spikes",
+      "switcheroo",
+      "grass-knot",
+      "smack-down",
+      "round",
+      "echoed-voice",
+      "scald",
+      "acrobatics",
+      "retaliate",
+      "bestow",
+      "water-pledge",
+      "work-up",
+      "confide",
+      "power-up-punch",
+      "liquidation",
+      "tera-blast",
+      "snowscape",
+      "trailblaze",
+      "chilling-water"
+    ],
+    "variants": [
+      {
+        "name": "froakie",
+        "image": "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/656.png"
+      }
+    ]
+  },
+  {
+    "pokeDex_num": 722,
+    "name": "rowlet",
+    "base_image": "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/722.png",
+    "shiny_image": "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/shiny/722.png",
+    "base_experience": 64,
+    "types": [
+      {
+        "slot": 1,
+        "type": {
+          "name": "grass",
+          "url": "https://pokeapi.co/api/v2/type/12/"
+        }
+      },
+      {
+        "slot": 2,
+        "type": {
+          "name": "flying",
+          "url": "https://pokeapi.co/api/v2/type/3/"
+        }
+      }
+    ],
+    "stats": [
+      {
+        "name": "hp",
+        "value": 68
+      },
+      {
+        "name": "attack",
+        "value": 55
+      },
+      {
+        "name": "defense",
+        "value": 55
+      },
+      {
+        "name": "special-attack",
+        "value": 50
+      },
+      {
+        "name": "special-defense",
+        "value": 50
+      },
+      {
+        "name": "speed",
+        "value": 42
+      }
+    ],
+    "moves": [
+      "swords-dance",
+      "gust",
+      "fury-attack",
+      "tackle",
+      "take-down",
+      "growl",
+      "peck",
+      "razor-leaf",
+      "solar-beam",
+      "toxic",
+      "night-shade",
+      "double-team",
+      "confuse-ray",
+      "light-screen",
+      "haze",
+      "swift",
+      "sky-attack",
+      "rest",
+      "substitute",
+      "snore",
+      "curse",
+      "protect",
+      "foresight",
+      "giga-drain",
+      "endure",
+      "false-swipe",
+      "swagger",
+      "steel-wing",
+      "attract",
+      "sleep-talk",
+      "return",
+      "frustration",
+      "safeguard",
+      "baton-pass",
+      "synthesis",
+      "hidden-power",
+      "rain-dance",
+      "sunny-day",
+      "facade",
+      "nature-power",
+      "helping-hand",
+      "knock-off",
+      "feather-dance",
+      "astonish",
+      "air-cutter",
+      "bullet-seed",
+      "aerial-ace",
+      "covet",
+      "magical-leaf",
+      "leaf-blade",
+      "roost",
+      "pluck",
+      "worry-seed",
+      "sucker-punch",
+      "seed-bomb",
+      "air-slash",
+      "energy-ball",
+      "brave-bird",
+      "nasty-plot",
+      "shadow-claw",
+      "shadow-sneak",
+      "defog",
+      "leaf-storm",
+      "grass-knot",
+      "ominous-wind",
+      "round",
+      "echoed-voice",
+      "grass-pledge",
+      "work-up",
+      "grassy-terrain",
+      "confide",
+      "leafage",
+      "grassy-glide",
+      "dual-wingbeat",
+      "tera-blast",
+      "trailblaze"
+    ],
+    "variants": [
+      {
+        "name": "rowlet",
+        "image": "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/722.png"
+      }
+    ]
+  },
+  {
+    "pokeDex_num": 725,
+    "name": "litten",
+    "base_image": "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/725.png",
+    "shiny_image": "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/shiny/725.png",
+    "base_experience": 64,
+    "types": [
+      {
+        "slot": 1,
+        "type": {
+          "name": "fire",
+          "url": "https://pokeapi.co/api/v2/type/10/"
+        }
+      }
+    ],
+    "stats": [
+      {
+        "name": "hp",
+        "value": 45
+      },
+      {
+        "name": "attack",
+        "value": 65
+      },
+      {
+        "name": "defense",
+        "value": 40
+      },
+      {
+        "name": "special-attack",
+        "value": 60
+      },
+      {
+        "name": "special-defense",
+        "value": 40
+      },
+      {
+        "name": "speed",
+        "value": 70
+      }
+    ],
+    "moves": [
+      "pay-day",
+      "scratch",
+      "swords-dance",
+      "double-kick",
+      "body-slam",
+      "take-down",
+      "thrash",
+      "double-edge",
+      "leer",
+      "bite",
+      "growl",
+      "roar",
+      "ember",
+      "flamethrower",
+      "fire-spin",
+      "toxic",
+      "double-team",
+      "lick",
+      "fire-blast",
+      "leech-life",
+      "fury-swipes",
+      "rest",
+      "substitute",
+      "snore",
+      "protect",
+      "scary-face",
+      "outrage",
+      "endure",
+      "swagger",
+      "attract",
+      "sleep-talk",
+      "return",
+      "frustration",
+      "hidden-power",
+      "sunny-day",
+      "crunch",
+      "fake-out",
+      "heat-wave",
+      "torment",
+      "will-o-wisp",
+      "facade",
+      "taunt",
+      "helping-hand",
+      "revenge",
+      "endeavor",
+      "overheat",
+      "bulk-up",
+      "covet",
+      "u-turn",
+      "flare-blitz",
+      "nasty-plot",
+      "shadow-claw",
+      "fire-fang",
+      "flame-charge",
+      "round",
+      "acrobatics",
+      "fire-pledge",
+      "work-up",
+      "parting-shot",
+      "confide",
+      "power-trip",
+      "tera-blast",
+      "trailblaze",
+      "temper-flare"
+    ],
+    "variants": [
+      {
+        "name": "litten",
+        "image": "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/725.png"
+      }
+    ]
+  },
+  {
+    "pokeDex_num": 728,
+    "name": "popplio",
+    "base_image": "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/728.png",
+    "shiny_image": "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/shiny/728.png",
+    "base_experience": 64,
+    "types": [
+      {
+        "slot": 1,
+        "type": {
+          "name": "water",
+          "url": "https://pokeapi.co/api/v2/type/11/"
+        }
+      }
+    ],
+    "stats": [
+      {
+        "name": "hp",
+        "value": 50
+      },
+      {
+        "name": "attack",
+        "value": 54
+      },
+      {
+        "name": "defense",
+        "value": 54
+      },
+      {
+        "name": "special-attack",
+        "value": 66
+      },
+      {
+        "name": "special-defense",
+        "value": 56
+      },
+      {
+        "name": "speed",
+        "value": 40
+      }
+    ],
+    "moves": [
+      "pound",
+      "double-slap",
+      "growl",
+      "sing",
+      "water-gun",
+      "hydro-pump",
+      "surf",
+      "ice-beam",
+      "blizzard",
+      "bubble-beam",
+      "toxic",
+      "double-team",
+      "waterfall",
+      "swift",
+      "amnesia",
+      "rest",
+      "substitute",
+      "snore",
+      "protect",
+      "perish-song",
+      "icy-wind",
+      "endure",
+      "charm",
+      "swagger",
+      "attract",
+      "sleep-talk",
+      "return",
+      "frustration",
+      "encore",
+      "iron-tail",
+      "hidden-power",
+      "rain-dance",
+      "whirlpool",
+      "uproar",
+      "hail",
+      "facade",
+      "helping-hand",
+      "dive",
+      "hyper-voice",
+      "covet",
+      "water-pulse",
+      "brine",
+      "aqua-ring",
+      "aqua-tail",
+      "captivate",
+      "aqua-jet",
+      "wonder-room",
+      "round",
+      "echoed-voice",
+      "scald",
+      "acrobatics",
+      "water-pledge",
+      "work-up",
+      "disarming-voice",
+      "draining-kiss",
+      "misty-terrain",
+      "play-rough",
+      "moonblast",
+      "confide",
+      "aromatic-mist",
+      "baby-doll-eyes",
+      "life-dew",
+      "flip-turn",
+      "triple-axel",
+      "tera-blast",
+      "ice-spinner",
+      "chilling-water"
+    ],
+    "variants": [
+      {
+        "name": "popplio",
+        "image": "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/728.png"
+      }
+    ]
+  },
+  {
+    "pokeDex_num": 810,
+    "name": "grookey",
+    "base_image": "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/810.png",
+    "shiny_image": "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/shiny/810.png",
+    "base_experience": 62,
+    "types": [
+      {
+        "slot": 1,
+        "type": {
+          "name": "grass",
+          "url": "https://pokeapi.co/api/v2/type/12/"
+        }
+      }
+    ],
+    "stats": [
+      {
+        "name": "hp",
+        "value": 50
+      },
+      {
+        "name": "attack",
+        "value": 65
+      },
+      {
+        "name": "defense",
+        "value": 50
+      },
+      {
+        "name": "special-attack",
+        "value": 40
+      },
+      {
+        "name": "special-defense",
+        "value": 40
+      },
+      {
+        "name": "speed",
+        "value": 65
+      }
+    ],
+    "moves": [
+      "mega-punch",
+      "scratch",
+      "swords-dance",
+      "slam",
+      "mega-kick",
+      "body-slam",
+      "take-down",
+      "growl",
+      "low-kick",
+      "strength",
+      "leech-seed",
+      "growth",
+      "razor-leaf",
+      "solar-beam",
+      "screech",
+      "focus-energy",
+      "swift",
+      "rest",
+      "substitute",
+      "thief",
+      "snore",
+      "protect",
+      "giga-drain",
+      "endure",
+      "false-swipe",
+      "attract",
+      "sleep-talk",
+      "sunny-day",
+      "fake-out",
+      "uproar",
+      "facade",
+      "nature-power",
+      "taunt",
+      "knock-off",
+      "endeavor",
+      "bullet-seed",
+      "magical-leaf",
+      "hammer-arm",
+      "u-turn",
+      "assurance",
+      "fling",
+      "worry-seed",
+      "seed-bomb",
+      "drain-punch",
+      "energy-ball",
+      "leaf-storm",
+      "grass-knot",
+      "wood-hammer",
+      "round",
+      "acrobatics",
+      "grass-pledge",
+      "work-up",
+      "grassy-terrain",
+      "solar-blade",
+      "branch-poke",
+      "grassy-glide",
+      "tera-blast",
+      "trailblaze"
+    ],
+    "variants": [
+      {
+        "name": "grookey",
+        "image": "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/810.png"
+      }
+    ]
+  },
+  {
+    "pokeDex_num": 813,
+    "name": "scorbunny",
+    "base_image": "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/813.png",
+    "shiny_image": "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/shiny/813.png",
+    "base_experience": 62,
+    "types": [
+      {
+        "slot": 1,
+        "type": {
+          "name": "fire",
+          "url": "https://pokeapi.co/api/v2/type/10/"
+        }
+      }
+    ],
+    "stats": [
+      {
+        "name": "hp",
+        "value": 50
+      },
+      {
+        "name": "attack",
+        "value": 71
+      },
+      {
+        "name": "defense",
+        "value": 40
+      },
+      {
+        "name": "special-attack",
+        "value": 40
+      },
+      {
+        "name": "special-defense",
+        "value": 40
+      },
+      {
+        "name": "speed",
+        "value": 69
+      }
+    ],
+    "moves": [
+      "double-kick",
+      "mega-kick",
+      "sand-attack",
+      "headbutt",
+      "tackle",
+      "take-down",
+      "double-edge",
+      "growl",
+      "ember",
+      "flamethrower",
+      "low-kick",
+      "counter",
+      "fire-spin",
+      "agility",
+      "quick-attack",
+      "focus-energy",
+      "fire-blast",
+      "swift",
+      "high-jump-kick",
+      "rest",
+      "super-fang",
+      "substitute",
+      "snore",
+      "reversal",
+      "protect",
+      "endure",
+      "attract",
+      "sleep-talk",
+      "baton-pass",
+      "sunny-day",
+      "heat-wave",
+      "facade",
+      "taunt",
+      "helping-hand",
+      "blaze-kick",
+      "overheat",
+      "bounce",
+      "mud-shot",
+      "u-turn",
+      "assurance",
+      "sucker-punch",
+      "flare-blitz",
+      "fire-fang",
+      "gunk-shot",
+      "electro-ball",
+      "flame-charge",
+      "low-sweep",
+      "round",
+      "ally-switch",
+      "acrobatics",
+      "fire-pledge",
+      "work-up",
+      "burning-jealousy",
+      "tera-blast",
+      "trailblaze",
+      "temper-flare"
+    ],
+    "variants": [
+      {
+        "name": "scorbunny",
+        "image": "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/813.png"
+      }
+    ]
+  },
+  {
+    "pokeDex_num": 816,
+    "name": "sobble",
+    "base_image": "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/816.png",
+    "shiny_image": "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/shiny/816.png",
+    "base_experience": 62,
+    "types": [
+      {
+        "slot": 1,
+        "type": {
+          "name": "water",
+          "url": "https://pokeapi.co/api/v2/type/11/"
+        }
+      }
+    ],
+    "stats": [
+      {
+        "name": "hp",
+        "value": 50
+      },
+      {
+        "name": "attack",
+        "value": 40
+      },
+      {
+        "name": "defense",
+        "value": 40
+      },
+      {
+        "name": "special-attack",
+        "value": 70
+      },
+      {
+        "name": "special-defense",
+        "value": 40
+      },
+      {
+        "name": "speed",
+        "value": 70
+      }
+    ],
+    "moves": [
+      "pound",
+      "bind",
+      "take-down",
+      "growl",
+      "mist",
+      "water-gun",
+      "hydro-pump",
+      "surf",
+      "double-team",
+      "light-screen",
+      "haze",
+      "reflect",
+      "waterfall",
+      "swift",
+      "rest",
+      "substitute",
+      "snore",
+      "protect",
+      "endure",
+      "attract",
+      "sleep-talk",
+      "safeguard",
+      "baton-pass",
+      "rain-dance",
+      "whirlpool",
+      "facade",
+      "dive",
+      "weather-ball",
+      "muddy-water",
+      "bounce",
+      "mud-shot",
+      "water-pulse",
+      "u-turn",
+      "sucker-punch",
+      "aqua-ring",
+      "ice-shard",
+      "aqua-jet",
+      "soak",
+      "round",
+      "water-pledge",
+      "work-up",
+      "fell-stinger",
+      "liquidation",
+      "tearful-look",
+      "tera-blast",
+      "chilling-water"
+    ],
+    "variants": [
+      {
+        "name": "sobble",
+        "image": "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/816.png"
+      }
+    ]
+  }
+]
