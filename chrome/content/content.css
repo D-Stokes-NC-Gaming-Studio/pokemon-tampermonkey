@@ -1,0 +1,38 @@
+/* Root container stuck to the bottom */
+#pk-walker-root {
+  position: fixed;
+  left: 20px;
+  bottom: 8px;
+  z-index: 2147483647; /* above most things */
+  pointer-events: none; /* don't block page clicks */
+  user-select: none;
+  font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+}
+
+/* Row that holds the sprite (can add more HUD later if you want) */
+#pk-walker {
+  position: relative;
+  display: inline-flex;
+  align-items: end;
+  gap: 6px;
+}
+
+/* Bobbing wrapper so img's transform can be used ONLY for flipping */
+.pk-sprite-bob {
+  display: inline-flex;
+  align-items: end;
+  animation: pk-bob 0.8s ease-in-out infinite;
+}
+
+@keyframes pk-bob {
+  0%,100% { transform: translateY(0); }
+  50%     { transform: translateY(-3px); }
+}
+
+/* The Pokémon image — flipping is applied here with scaleX */
+#pk-walker img {
+  width: 64px;          /* tweak size if you like */
+  height: auto;
+  image-rendering: pixelated;
+  transform-origin: bottom center;  /* keeps feet on the ground when flipped */
+}
