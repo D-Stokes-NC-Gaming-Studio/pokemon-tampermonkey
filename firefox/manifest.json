@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Pokémon Sidebar",
-  "version": "3.0.0",
+  "version": "3.0.1",
   "description": "Pick a starter Pokémon and play in a Firefox sidebar.",
   "icons": {
     "16": "icons/icon-16.png",

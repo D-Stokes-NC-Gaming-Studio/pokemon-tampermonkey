@@ -3,6 +3,7 @@ const $ = (s, r = document) => r.querySelector(s);
 /* =========================
    CONFIG
    ========================= */
+   // Need to add user input for username //
 const API_BASE = "https://dstokesncstudio.com/pokeapi/pokeapi.php";
 const GET_POKEMON = (name) => `${API_BASE}?action=getPokemon&name=${encodeURIComponent(String(name).toLowerCase())}`;
 const dev = false;
@@ -150,6 +151,98 @@ async function updateBallSelect() {
         }
     }
 }
+/*
+========================
+    Register User
+
+*/
+async function promptUsernameAndRegister() {
+    // ✅ Try persistent sources first
+    let username =
+        (await browser.storage.local.get("username")).username ||
+        localStorage.getItem("username") ||
+        sessionStorage.getItem("username");
+
+    // 🧠 If found, reuse without asking
+    if (username) {
+        console.log("Loaded username:", username);
+        sessionStorage.setItem("username", username); // restore to session for convenience
+        return username;
+    }
+
+    // 🚀 Ask only if no username found anywhere
+    username = prompt("🎮 Choose a unique username to start your Pokémon adventure:");
+    if (!username || username.trim().length < 3) {
+        alert("Please enter a username with at least 3 characters.");
+        return promptUsernameAndRegister();
+    }
+
+    username = username.trim();
+
+    try {
+        const res = await fetch("https://dstokesncstudio.com/pokeBackend/api/registerUser.php", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ username }),
+        });
+
+        const json = await res.json();
+
+        if (json.success || json.status === "success") {
+            console.log("✅ Registered:", json.username || username);
+            // Save persistently
+            await browser.storage.local.set({ username });
+            localStorage.setItem("username", username);
+            sessionStorage.setItem("username", username);
+            return username;
+        } else if (json.message?.includes("taken")) {
+            alert("❌ Username already taken! Try another.");
+            return promptUsernameAndRegister();
+        } else {
+            alert("⚠️ " + json.message);
+            return promptUsernameAndRegister();
+        }
+    } catch (err) {
+        console.error("Registration failed:", err);
+        alert("Failed to connect to server.");
+    }
+
+    return null;
+}
+
+
+async function syncUserDataToBackend() {
+    const { username } = await browser.storage.local.get("username");
+    if (!username) return;
+
+    const keys = [
+        "audioEnabled", "audioVolume",
+        "ballPool", "caught", "party", "pcBoxes", "pickedPokemon",
+        "playerStats", "lastEncounter",
+        "pokestopCooldown", "coins"
+    ];
+    const data = await browser.storage.local.get(keys);
+
+    // quick type safety
+    data.audioEnabled = !!data.audioEnabled;
+    data.audioVolume = Number.isFinite(+data.audioVolume) ? +data.audioVolume : 0.5;
+    data.pokestopCooldown = Number.isFinite(+data.pokestopCooldown) ? +data.pokestopCooldown : 0;
+    data.coins = Number.isFinite(+data.coins) ? +data.coins : 0;
+
+    await fetch("https://dstokesncstudio.com/pokeBackend/api/updateUser.php", {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+            "X-Session-User": username
+        },
+        body: JSON.stringify(data)
+    }).then(r => r.json()).then(j => {
+        if (!j.success) console.warn("Sync failed:", j);
+    }).catch(err => console.error("Sync error:", err));
+}
+
+
+
 /*
 =========================
     COINS
@@ -947,6 +1040,7 @@ async function setPlayerMon(mon) {
         caught[idx] = mon;
         await setCaught(caught);
     }
+    await syncUserDataToBackend();
 }
 
 
@@ -989,6 +1083,7 @@ function endBattle(message) {
         hint.textContent = message || 'Tap “Start Battle” to encounter a random wild Pokémon (Gen 1–5).';
         panel.appendChild(hint);
     }
+    syncUserDataToBackend();
     const status = $("#battleStatus"); if (status) status.textContent = "";
 }
 /*==========================
@@ -1157,6 +1252,7 @@ async function startBattle(opts = {}) {
         }
 
         await setLastEncounter(wild);
+        await syncUserDataToBackend();
         renderBattle();
         if (status) status.textContent = "";
     } catch (e) {
@@ -1325,6 +1421,7 @@ async function renderBattle(msg) {
 
     // Update select counts/enabled state now
     await updateBallSelect();
+    //await syncUserDataToBackend();
 
     // Compose card
     card.append(top, ctl);
@@ -1413,6 +1510,7 @@ async function grantExpForWin(wildMon) {
     try {
         const evo = await evolvePlayerIfEligible();
         if (evo.evolved) toast(`✨ ${evo.oldName} evolved into ${evo.newName}!`);
+
     } catch (e) {
         console.warn("Evolution check failed:", e);
     }
@@ -1512,6 +1610,7 @@ async function throwBall() {
 
 function runAway() {
     browser.storage.local.set({ lastEncounter: null });
+
     endBattle("Got away safely. Start another battle!");
 }
 /* =========================
@@ -1524,11 +1623,7 @@ function fmtTime(ms) {
     const s = Math.floor((ms % 60000) / 1000);
     return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 }
-// Show a small toast (use alert if you prefer)
-function toast(msg) {
-    // lightweight fallback
-    alert(msg);
-}
+
 async function updatePokeStopStatus() {
     const statusEl = $("#btnPokeStop");
     const pokeEl = $("#pokeStopPanel");
@@ -1634,6 +1729,7 @@ async function openPokeStop() {
         pokestopTimer = setInterval(updatePokeStopStatus, 1000);
     }
     updatePokeStopStatus();
+    await syncUserDataToBackend();
 }
 /* =========================
     Inventory Helpers
@@ -1652,13 +1748,31 @@ async function getInventorySummary() {
    INIT + EVENTS
    ========================= */
 async function rollAndRender() {
-    $("#status").textContent = "Loading starters…";
-    const list = await loadStarters();
-    const unique = new Map(list.map(p => [String(p.pokeDex_num ?? p.name), p]));
-    const pool = shuffle(Array.from(unique.values())).slice(0, 3);
-    await browser.storage.local.set({ ballPool: pool });
-    renderThreeBalls(pool);
+    try {
+        $("#status").textContent = "Loading starters…";
+
+        // Load and pick 3 unique starters
+        const list = await loadStarters();
+        const unique = new Map(list.map(p => [String(p.pokeDex_num ?? p.name), p]));
+        const pool = shuffle(Array.from(unique.values())).slice(0, 3);
+
+        // Save to local storage
+        await browser.storage.local.set({ ballPool: pool });
+
+        // 🆕 Immediately sync new starter data to backend
+        await syncUserDataToBackend();
+
+        // Render the 3 Poké Balls
+        renderThreeBalls(pool);
+
+        $("#status").textContent = "Choose a Poké Ball:";
+        console.log("🎲 Starter pool generated and synced to backend.");
+    } catch (err) {
+        console.error("❌ Failed to roll starters:", err);
+        $("#status").textContent = "Failed to load starters.";
+    }
 }
+
 function applyCompactLayout() {
     const compact = document.documentElement.clientWidth <= 360;
     document.body.classList.toggle('compact', compact);
@@ -1700,8 +1814,8 @@ async function initSettings() {
         playSound("hit");
     });
     saveBtn.addEventListener("click", () => {
-        toast("Settings saved.");
-        alert("This will be added so saaving data will persist across devices in a future update.");
+        toast({ title: "Settings", message: "Audio settings saved!", type: "success" });
+        syncUserDataToBackend();
     });
 
     browser.storage.onChanged.addListener((changes, area) => {
@@ -1750,31 +1864,50 @@ async function playSound(key) {
 */
 // Initialize default PC boxes if missing
 async function loadPartyAndBoxes() {
-    let [party, boxes] = await Promise.all([
-        browser.storage.local.get(PARTY_KEY).then(o => Array.isArray(o[PARTY_KEY]) ? o[PARTY_KEY] : []),
-        browser.storage.local.get(BOXES_KEY).then(o => o[BOXES_KEY]),
-    ]);
+    const { party, pcBoxes } = await browser.storage.local.get(["party", "pcBoxes"]);
 
-    if (!boxes || !Array.isArray(boxes.boxes)) {
+    const safeParty = Array.isArray(party) ? party : [];
+
+    let boxes = pcBoxes;
+
+    // 🩹 Fix or initialize missing structure
+    let changed = false;
+    if (!boxes || typeof boxes !== "object" || !Array.isArray(boxes.boxes)) {
         boxes = {
             current: 0,
-            boxes: [
-                { name: "Box 1", slots: Array(30).fill(null) }
-            ]
+            boxes: [{ name: "Box 1", slots: new Array(30).fill(null) }]
         };
-        await browser.storage.local.set({ [BOXES_KEY]: boxes });
-    }
-
-    // Always compact the party on load (remove nulls)
-    if (!Array.isArray(party)) {
-        party = [];
+        changed = true;
     } else {
-        party = compactParty(party);
+        if (!Array.isArray(boxes.boxes)) {
+            boxes.boxes = [{ name: "Box 1", slots: new Array(30).fill(null) }];
+            changed = true;
+        }
+        if (boxes.boxes.length === 0) {
+            boxes.boxes.push({ name: "Box 1", slots: new Array(30).fill(null) });
+            changed = true;
+        }
+        for (const box of boxes.boxes) {
+            if (!Array.isArray(box.slots)) {
+                box.slots = new Array(30).fill(null);
+                changed = true;
+            }
+        }
+        if (typeof boxes.current !== "number" || boxes.current < 0 || boxes.current >= boxes.boxes.length) {
+            boxes.current = 0;
+            changed = true;
+        }
     }
-    await browser.storage.local.set({ [PARTY_KEY]: party });
 
-    return { party, boxes };
+    // 🔄 Persist repair immediately
+    if (changed) {
+        await browser.storage.local.set({ pcBoxes: boxes });
+    }
+
+    return { party: safeParty, boxes };
 }
+
+
 function compactParty(party) {
     return party.filter(Boolean).slice(0, 6);
 }
@@ -1782,13 +1915,22 @@ async function saveParty(party) {
     const compacted = compactParty(party);
     await browser.storage.local.set({ [PARTY_KEY]: compacted });
 }
+// Ensure saved structure is valid
 async function saveBoxes(boxes) {
-    await browser.storage.local.set({ [BOXES_KEY]: boxes });
+    if (!boxes || !Array.isArray(boxes.boxes)) {
+        boxes = { current: 0, boxes: [{ name: "Box 1", slots: new Array(30).fill(null) }] };
+    }
+    // Make sure slots exist for each box
+    for (const box of boxes.boxes) {
+        if (!Array.isArray(box.slots)) box.slots = new Array(30).fill(null);
+    }
+    await browser.storage.local.set({ pcBoxes: boxes });
 }
 // Utility: first empty slot index in the current box (or -1)
 function firstEmptySlot(slots) {
-    return slots.findIndex(x => !x);
+    return Array.isArray(slots) ? slots.findIndex(s => s === null) : -1;
 }
+
 function makeMonCard(mon) {
     const card = document.createElement("div");
     card.className = "mon-card";
@@ -1832,12 +1974,39 @@ function wireCardDrag(card, from, index) {
     card.addEventListener("dragend", () => { __drag = null; });
 }
 async function renderPartyAndStorage() {
-    const [caught, pb] = await Promise.all([getCaughtWithUID(), loadPartyAndBoxes()]);
+    const [caught, pbRaw] = await Promise.all([
+        getCaughtWithUID(),
+        loadPartyAndBoxes()
+    ]);
+
+    // ✅ Safety: make sure pb structure is valid
+    const pb = {
+        party: Array.isArray(pbRaw.party) ? pbRaw.party : [],
+        boxes: pbRaw.boxes && Array.isArray(pbRaw.boxes.boxes)
+            ? pbRaw.boxes
+            : {
+                current: 0,
+                boxes: [
+                    { name: "Box 1", slots: new Array(30).fill(null) }
+                ]
+            }
+    };
+
+    // ✅ Ensure current box index is valid
+    if (pb.boxes.current >= pb.boxes.boxes.length) pb.boxes.current = 0;
+    if (!Array.isArray(pb.boxes.boxes[pb.boxes.current].slots)) {
+        pb.boxes.boxes[pb.boxes.current].slots = new Array(30).fill(null);
+    }
+
     const byUID = mapCaughtByUID(caught);
 
-    // Party
+    // ========================
+    // 🧩 PARTY GRID
+    // ========================
     const partyGrid = document.getElementById("partyGrid");
+    if (!partyGrid) return console.warn("No #partyGrid element found!");
     partyGrid.innerHTML = "";
+
     for (let i = 0; i < 6; i++) {
         const uid = pb.party[i] || null;
         const slot = document.createElement("div");
@@ -1850,23 +2019,20 @@ async function renderPartyAndStorage() {
                 wireCardDrag(card, "party", i);
                 slot.appendChild(card);
             } else {
-                // missing/corrupt id
                 slot.classList.add("empty");
             }
         }
 
-        // Drop behavior: move/swap into party slot i
+        // Drop into party slot i
         wireSlotDnD(slot, async (drag) => {
             const { party, boxes } = await loadPartyAndBoxes();
             if (drag.from === "party") {
-                // swap within party
                 const uidA = party[drag.index] || null;
                 const uidB = party[i] || null;
                 party[i] = uidA;
                 if (drag.index !== i) party[drag.index] = uidB || null;
                 await saveParty(party);
             } else {
-                // from storage box
                 const slots = boxes.boxes[boxes.current].slots;
                 const moving = slots[drag.index];
                 const replaced = party[i] || null;
@@ -1874,19 +2040,35 @@ async function renderPartyAndStorage() {
                 slots[drag.index] = replaced || null;
                 await Promise.all([saveParty(party), saveBoxes(boxes)]);
             }
+            // 🟢 Sync with backend
+            try {
+                await syncUserDataToBackend();
+                console.log("[Sync] Party/Storage update pushed to backend.");
+            } catch (err) {
+                console.warn("[Sync] Failed to push update:", err);
+            }
+            // ✅ Always re-render after any update
             renderPartyAndStorage();
         });
 
         partyGrid.appendChild(slot);
     }
 
-    // Storage box
+    // ========================
+    // 📦 STORAGE BOX GRID
+    // ========================
     const boxTitle = document.getElementById("boxTitle");
-    boxTitle.textContent = pb.boxes.boxes[pb.boxes.current]?.name || `Box ${pb.boxes.current + 1}`;
+    if (boxTitle) {
+        const curBox = pb.boxes.boxes[pb.boxes.current];
+        boxTitle.textContent = curBox.name || `Box ${pb.boxes.current + 1}`;
+    }
 
     const storageGrid = document.getElementById("storageGrid");
+    if (!storageGrid) return console.warn("No #storageGrid element found!");
     storageGrid.innerHTML = "";
+
     const slots = pb.boxes.boxes[pb.boxes.current].slots;
+
     for (let i = 0; i < 30; i++) {
         const uid = slots[i] || null;
         const slot = document.createElement("div");
@@ -1912,19 +2094,23 @@ async function renderPartyAndStorage() {
                 const moving = party[drag.index] || null;
                 const replaced = destSlots[i] || null;
                 destSlots[i] = moving;
-
-                // Instead of leaving null in the party, remove it
                 party.splice(drag.index, 1);
                 if (replaced) party.push(replaced);
 
                 await Promise.all([saveParty(party), saveBoxes(boxes)]);
             } else {
-                // swap within same box
                 const a = drag.index, b = i;
                 const tmp = destSlots[a];
                 destSlots[a] = destSlots[b];
                 destSlots[b] = tmp;
                 await saveBoxes(boxes);
+            }
+            // 🟢 Sync with backend
+            try {
+                await syncUserDataToBackend();
+                console.log("[Sync] Box update pushed to backend.");
+            } catch (err) {
+                console.warn("[Sync] Failed to push update:", err);
             }
             renderPartyAndStorage();
         });
@@ -1932,6 +2118,7 @@ async function renderPartyAndStorage() {
         storageGrid.appendChild(slot);
     }
 }
+
 async function openPartyView() {
     // View switching
     document.getElementById("viewPicker")?.classList.add("hidden");
@@ -1964,28 +2151,49 @@ function wireBoxArrows() {
 async function placeNewCatchIntoPartyOrStorage(caughtUID) {
     const { party, boxes } = await loadPartyAndBoxes();
 
+    // 🧩 Ensure at least one valid box
+    if (!boxes.boxes || boxes.boxes.length === 0) {
+        boxes.boxes = [{ name: "Box 1", slots: new Array(30).fill(null) }];
+        boxes.current = 0;
+        await saveBoxes(boxes);
+    }
+
     if (party.length < 6) {
         party.push(caughtUID);
         await saveParty(party);
     } else {
-        // Party full, go to storage
-        let slots = boxes.boxes[boxes.current].slots;
-        let idx = firstEmptySlot(slots);
-        if (idx === -1) {
-            boxes.boxes.push({ name: `Box ${boxes.boxes.length + 1}`, slots: Array(30).fill(null) });
+        let currentBox = boxes.boxes[boxes.current];
+        if (!currentBox || !Array.isArray(currentBox.slots)) {
+            currentBox = { name: `Box ${boxes.boxes.length + 1}`, slots: new Array(30).fill(null) };
+            boxes.boxes.push(currentBox);
             boxes.current = boxes.boxes.length - 1;
-            slots = boxes.boxes[boxes.current].slots;
-            idx = firstEmptySlot(slots);
         }
-        slots[idx] = caughtUID;
+
+        let idx = firstEmptySlot(currentBox.slots);
+        if (idx === -1) {
+            const newBox = { name: `Box ${boxes.boxes.length + 1}`, slots: new Array(30).fill(null) };
+            boxes.boxes.push(newBox);
+            boxes.current = boxes.boxes.length - 1;
+            idx = 0;
+        }
+
+        currentBox.slots[idx] = caughtUID;
         await saveBoxes(boxes);
     }
 
-    // Re-render if party UI is open
+    // 🖼 Optional immediate UI + sync
     if (!document.getElementById("viewParty")?.classList.contains("hidden")) {
         await renderPartyAndStorage();
     }
+
+    // ✅ Immediately persist to backend if username exists
+    const { username } = await browser.storage.local.get("username");
+    if (username) {
+        await syncUserDataToBackend(username);
+    }
 }
+
+
 
 
 /* =========================
@@ -2026,12 +2234,13 @@ async function handleCatch(mon) {
     await browser.storage.local.set({ lastEncounter: null });
 
     endBattle(`You caught ${mon.name}!`);
+
 }
 /* 
 *   =========================
 *   Save Data Helpers
 *   =========================
-*/ 
+*/
 async function collectPlayerState(username = "guest") {
     // Load everything we need from storage
     const keys = [
@@ -2066,10 +2275,10 @@ async function collectPlayerState(username = "guest") {
             }
         ],
         items: [
-            { name: "potion",      image: "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/potion.png" },
+            { name: "potion", image: "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/potion.png" },
             { name: "superpotion", image: "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/super-potion.png" },
             { name: "hyperpotion", image: "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/hyper-potion.png" },
-            { name: "maxpotion",   image: "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/max-potion.png" },
+            { name: "maxpotion", image: "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/max-potion.png" },
             { name: "fullrestore", image: "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/full-restore.png" }
         ]
     };
@@ -2150,20 +2359,86 @@ async function migrateOldStorage() {
         await browser.storage.local.set({ ballPool: [] });
     }
 
-    if(!typeof store.greatBalls === "number"){
+    if (!typeof store.greatBalls === "number") {
         await browser.storage.local.set({ greatBalls: 0 });
     }
-    if(!typeof store.ultraBalls === "number"){
+    if (!typeof store.ultraBalls === "number") {
         await browser.storage.local.set({ ultraBalls: 0 });
     }
-    if(!typeof store.masterBalls === "number"){
+    if (!typeof store.masterBalls === "number") {
         await browser.storage.local.set({ masterBalls: 0 });
     }
-
+    await loadPartyAndBoxes(); // triggers auto-repair and saveBoxes
     toast("Storage migration complete.");
     console.log("[migrateOldStorage] Migration complete.");
 }
+// Show a small toast (use alert if you prefer)
+// Simple toast API:
+// toast("Saved!");
+// toast("Saved", "success");
+// toast({ title: "Synced", message: "Party updated", type: "info", duration: 3000 });
+// setToastPosition("top-right" | "top-left" | "bottom-left" | "bottom-right")
 
+// === TOAST SYSTEM ===
+(function(){
+  const ICONS = { success:"✔️", error:"✖️", warning:"⚠️", info:"ℹ️", default:"🔔" };
+  function ensureRoot(){
+    let root=document.getElementById("toast-root");
+    if(!root){
+      root=document.createElement("div");
+      root.id="toast-root";
+      document.body.appendChild(root);
+    }
+    return root;
+  }
+  function removeToast(el){
+    el.style.animation="toast-out .16s ease-in forwards";
+    setTimeout(()=>el.remove(),170);
+  }
+  function makeToast({title,message,type="default",duration=3500,closeable=true}){
+    const root=ensureRoot();
+    const el=document.createElement("div");
+    el.className=`toast toast--${type} show`;
+    const icon=document.createElement("div");
+    icon.className="toast__icon";
+    icon.textContent=ICONS[type]||ICONS.default;
+    const content=document.createElement("div");
+    content.className="toast__content";
+    if(title){
+      const t=document.createElement("div");
+      t.className="toast__title";
+      t.textContent=title;
+      content.appendChild(t);
+    }
+    const m=document.createElement("div");
+    m.className="toast__msg";
+    m.textContent=message||title||"";
+    content.appendChild(m);
+    const close=document.createElement("button");
+    close.className="toast__close";
+    close.innerHTML="×";
+    if(closeable)close.addEventListener("click",()=>removeToast(el));
+    else close.style.display="none";
+    el.append(icon,content,close);
+    root.appendChild(el);
+    if(duration>0)setTimeout(()=>removeToast(el),duration);
+    return el;
+  }
+  window.toast=function(arg1,arg2){
+    if(typeof arg1==="object"){
+      const {title,message,type,duration,closeable}=arg1;
+      return makeToast({title,message,type,duration,closeable});
+    }
+    const message=String(arg1??"");
+    const type=arg2||"default";
+    return makeToast({message,type});
+  };
+  window.setToastPosition=function(pos="bottom-right"){
+    const root=ensureRoot();
+    root.classList.remove("top-right","top-left","bottom-left","bottom-right");
+    root.classList.add(pos);
+  };
+})();
 /* 
 *   =========================
     MAIN INIT
@@ -2172,7 +2447,25 @@ async function migrateOldStorage() {
 async function init() {
     // show version
     $("#ver").textContent = browser.runtime.getManifest().version;
+    setToastPosition("bottom-right");
+    // 🔹 Ask for username and register on backend
+    const username = await promptUsernameAndRegister();
+    if (!username) return; // user canceled or invalid
 
+    // 🔹 Fetch saved data from backend
+    try {
+        const res = await fetch("https://dstokesncstudio.com/pokeBackend/api/getUser.php", {
+            headers: { "X-Session-User": username }
+        });
+        const json = await res.json();
+
+        if (json.success && json.data) {
+            console.log("Loaded user:", json.data);
+            await browser.storage.local.set(json.data);
+        }
+    } catch (err) {
+        console.error("Failed to load user data:", err);
+    }
     // Build the two dropdown menus (labels are yours to change)
     ensureMenuToggle("navPrimary", { label: "Play", icon: "🎮" });            // left menu
     ensureMenuToggle("navSecondary", { label: "More", icon: "☰", right: true }); // right menu
@@ -2194,7 +2487,7 @@ async function init() {
         id: "btnShop",
         text: "🛒 Shop",
         title: "Shop (coming soon)",
-        onClick: () => alert("Shop is coming soon!"),
+        onClick: () => toast("Shop is coming soon!"),
     });
 
 
@@ -2234,60 +2527,101 @@ async function init() {
     // --- end header buttons ---
 
     // starter pick / restore flow
+    // 🔹 Fetch saved data from backend
+    try {
+        const res = await fetch("https://dstokesncstudio.com/pokeBackend/api/getUser.php", {
+            headers: { "X-Session-User": username }
+        });
+        const json = await res.json();
+
+        if (json.success && json.data) {
+            console.log("Loaded user:", json.data);
+            await browser.storage.local.set(json.data);
+        }
+    } catch (err) {
+        console.error("Failed to load user data:", err);
+    }
+
     const saved = await browser.storage.local.get(["pickedPokemon", "ballPool"]);
-    if (saved.pickedPokemon) {
+
+    if (saved.pickedPokemon && Object.keys(saved.pickedPokemon).length > 0) {
+        // 🔹 User already picked a Pokémon
         $("#status").textContent = "Your pick: " + (saved.pickedPokemon.name || "unknown");
         $("#balls")?.classList.add("hidden");
         showResult(saved.pickedPokemon);
-    } else if (Array.isArray(saved.ballPool) && saved.ballPool.length === 3) {
+    }
+    else if (Array.isArray(saved.ballPool) && saved.ballPool.length === 3) {
+        // 🔹 Already have 3 Pokéballs from previous session
         $("#status").textContent = "Choose a Poké Ball:";
         renderThreeBalls(saved.ballPool);
-    } else {
+    }
+    else {
+        // 🔹 Missing OR empty — generate new Pokéballs
+        console.log("🆕 No starter Pokémon or empty ball pool detected — generating new starters...");
         await rollAndRender();
     }
+
 
     // pick one of the three balls
     $("#balls")?.addEventListener("click", async (e) => {
         const btn = e.target.closest(".ball");
         if (!btn) return;
 
-        const { pickedPokemon, ballPool } = await browser.storage.local.get(["pickedPokemon", "ballPool"]);
-        if (pickedPokemon || !Array.isArray(ballPool)) return;
+        const { pickedPokemon, ballPool, party } = await browser.storage.local.get([
+            "pickedPokemon",
+            "ballPool",
+            "party"
+        ]);
 
+        // 🚫 Prevent picking twice
+        if (pickedPokemon && Object.keys(pickedPokemon).length > 0) {
+            console.warn("Starter already chosen.");
+            return;
+        }
+
+        if (Array.isArray(party) && party.some(p => p && Object.keys(p).length > 0)) {
+            console.warn("Active party already exists.");
+            return;
+        }
+
+
+        // Ensure a valid click
+        if (!Array.isArray(ballPool)) return;
         const idx = Number(btn.dataset.index || 0);
         const chosen = ballPool[idx];
         if (!chosen) return;
 
-        // Save as picked starter
+        // Save chosen Pokémon locally
         await browser.storage.local.set({ pickedPokemon: chosen });
         $("#status").textContent = "Your pick: " + (chosen.name || "unknown");
         $("#balls")?.classList.add("hidden");
         showResult(chosen);
 
-        // Ensure playerMon exists
-        const player = await getPlayerMon();
-
-        // --- NEW: Add to Pokédex & Party/Storage ---
+        // --- Add to Pokédex + Party/Storage ---
         try {
-            // Wrap it with UID
             const entry = ensureCaughtUID(makeCaughtEntry(chosen));
 
-            // Add to dex if not already
-            const list = await getCaughtWithUID();
+            // Update Pokédex
+            const caughtList = await getCaughtWithUID();
             const key = String(entry.pokeDex_num ?? entry.name).toLowerCase();
-            if (!list.some(x => String(x.pokeDex_num ?? x.name).toLowerCase() === key)) {
-                list.push(entry);
-                await setCaught(list);
+            if (!caughtList.some(x => String(x.pokeDex_num ?? x.name).toLowerCase() === key)) {
+                caughtList.push(entry);
+                await setCaught(caughtList);
             }
 
-            // Place into party (or storage if full)
+            // Place into party or storage
             await placeNewCatchIntoPartyOrStorage(entry.uid);
 
-            console.log(`Starter ${chosen.name} added to Pokédex + party.`);
+            console.log(`✅ Starter ${chosen.name} added to Pokédex + party.`);
+
+            // --- Sync everything to backend ---
+            await syncUserDataToBackend();
         } catch (err) {
-            console.error("Failed to add starter to dex/party:", err);
+            console.error("❌ Failed to add starter to dex/party:", err);
         }
     });
+
+
 
 
     // battle panel buttons
@@ -2354,6 +2688,7 @@ async function init() {
         $("#dex-tools")?.classList.add("hidden");
         $("#addOwnedPanel")?.remove();
     }
+
     window.addEventListener('resize', applyCompactLayout);
     applyCompactLayout();
     // PokéStop ticker and coin display

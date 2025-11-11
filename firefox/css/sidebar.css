@@ -408,3 +408,72 @@ footer{ display:flex; flex-wrap:wrap; gap:6px; align-items:center; }
 @media (max-width: 360px){
   .mon-meta{ display:none; } /* keep just the sprite when super narrow */
 }
+/* Toast container */
+#toast-root {
+  position: fixed;
+  z-index: 99999;
+  inset: auto 16px 16px auto; /* bottom-right */
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  pointer-events: none;
+  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial;
+}
+
+/* Single toast */
+.toast {
+  pointer-events: auto;
+  display: grid;
+  grid-template-columns: 28px 1fr auto;
+  gap: 10px;
+  align-items: center;
+  min-width: 260px;
+  max-width: 380px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: #111827;
+  color: #e5e7eb;
+  box-shadow: 0 12px 24px rgba(0,0,0,.24), 0 6px 10px rgba(0,0,0,.18);
+  transform: translateY(8px);
+  opacity: 0;
+  animation: toast-in .18s ease-out forwards;
+  border: 1px solid rgba(255,255,255,.06);
+}
+
+.toast__icon {
+  width: 28px; height: 28px;
+  display: grid; place-items: center;
+  border-radius: 50%;
+  background: #374151;
+  font-size: 16px;
+}
+
+.toast__content { line-height: 1.2; }
+.toast__title { font-weight: 700; font-size: 14px; margin-bottom: 2px; color: #f9fafb; }
+.toast__msg { font-size: 13px; color: #d1d5db; }
+
+.toast__close {
+  margin-left: 8px;
+  opacity: .7;
+  background: none; border: 0; color: #9ca3af; cursor: pointer;
+  font-size: 18px; line-height: 1;
+}
+.toast__close:hover { opacity: 1; color: #e5e7eb; }
+
+.toast--success .toast__icon { background:#064e3b; color:#a7f3d0; }
+.toast--error   .toast__icon { background:#3f1d1d; color:#fecaca; }
+.toast--warning .toast__icon { background:#4b3a07; color:#fde68a; }
+.toast--info    .toast__icon { background:#113153; color:#bfdbfe; }
+
+@keyframes toast-in {
+  from { transform: translateY(8px); opacity:0; }
+  to   { transform: translateY(0); opacity:1; }
+}
+@keyframes toast-out {
+  to { transform: translateY(8px); opacity:0; }
+}
+
+/* Optional: top-right position (toggle with JS) */
+#toast-root.top-right { inset: 16px 16px auto auto; }
+#toast-root.top-left  { inset: 16px auto auto 16px; }
+#toast-root.bottom-left{ inset: auto auto 16px 16px; }
