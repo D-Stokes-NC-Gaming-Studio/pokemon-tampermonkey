@@ -156,6 +156,12 @@ async function updateBallSelect() {
     Register User
 
 */
+async function getUserandRegister(){
+     
+
+    return null
+}
+
 async function promptUsernameAndRegister() {
     // ✅ Try persistent sources first
     let username =
