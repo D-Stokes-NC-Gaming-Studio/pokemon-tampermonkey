@@ -180,28 +180,46 @@ async function promptUsernameAndRegister() {
     username = username.trim();
 
     try {
-        const res = await fetch("https://dstokesncstudio.com/pokeBackend/api/registerUser.php", {
+        const getUserName = await fetch("https://dstokesncstudio.com/pokeBackend/getUser.php", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ username }),
         });
+        const userJson = await getUserName.json;
 
-        const json = await res.json();
-
-        if (json.success || json.status === "success") {
-            console.log("✅ Registered:", json.username || username);
+        if(userJson.success || userJson.status === "success"){
+            console.log("✅ Registered:", userJson.username || username);
             // Save persistently
             await browser.storage.local.set({ username });
             localStorage.setItem("username", username);
             sessionStorage.setItem("username", username);
             return username;
-        } else if (json.message?.includes("taken")) {
-            alert("❌ Username already taken! Try another.");
-            return promptUsernameAndRegister();
-        } else {
-            alert("⚠️ " + json.message);
-            return promptUsernameAndRegister();
+        }else{
+            const res = await fetch("https://dstokesncstudio.com/pokeBackend/api/registerUser.php", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ username }),
+            });
+
+            const json = await res.json();
+
+            if (json.success || json.status === "success") {
+                console.log("✅ Registered:", json.username || username);
+                // Save persistently
+                await browser.storage.local.set({ username });
+                localStorage.setItem("username", username);
+                sessionStorage.setItem("username", username);
+                return username;
+            } else if (json.message?.includes("taken")) {
+                alert("❌ Username already taken! Try another.");
+                return promptUsernameAndRegister();
+            } else {
+                alert("⚠️ " + json.message);
+                return promptUsernameAndRegister();
+            }
         }
+
+
     } catch (err) {
         console.error("Registration failed:", err);
         alert("Failed to connect to server.");

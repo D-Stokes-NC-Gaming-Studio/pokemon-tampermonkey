@@ -1,0 +1,10 @@
+<component name="libraryTable">
+  <library name="web-ext-artifacts">
+    <CLASSES>
+      <root url="jar://$PROJECT_DIR$/web-ext-artifacts/pok_mon_sidebar-3.0.0.zip!/" />
+      <root url="jar://$PROJECT_DIR$/web-ext-artifacts/pok_mon_sidebar-1.0.0.zip!/" />
+    </CLASSES>
+    <JAVADOC />
+    <SOURCES />
+  </library>
+</component>
