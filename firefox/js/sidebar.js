@@ -408,7 +408,7 @@ async function initLoginRegisterSystem() {
             usernameInput.value = stored;
             showLogin();
             showStatus(statusLogin, `Welcome back, ${stored}!`, "success");
-            
+
         } else {
             showRegister();
             showStatus(statusRegister, "Create your account", "info");
@@ -602,6 +602,7 @@ function showPicker() {
     $("#viewBattle")?.classList.add("hidden");
     $("#viewParty")?.classList.add("hidden");
     $("#viewSettings")?.classList.add("hidden");
+    $("#viewOnlineBattle")?.classList.add("hidden");
     if (wild) endBattle();
 }
 function showDex() {
@@ -2554,6 +2555,31 @@ async function collectPlayerState(username = "guest") {
         coins: store.coins || 0
     };
 }
+/* =========================
+    Online Battle
+    ========================= 
+*/
+function openOnlineBattleView() {
+    // Hide other main views
+    document.getElementById("viewLoginRegister")?.classList.add("hidden");
+    document.getElementById("viewRegister")?.classList.add("hidden");
+    document.getElementById("viewDex")?.classList.add("hidden");
+    document.getElementById("viewBattle")?.classList.add("hidden");
+    document.getElementById("viewPicker")?.classList.add("hidden");
+    document.getElementById("resultCard")?.classList.add("hidden");
+    // ^ adjust to whatever main views you actually use
+
+    // Show Online Battle view
+    const battleView = document.getElementById("viewOnlineBattle");
+    if (battleView) {
+        battleView.classList.remove("hidden");
+    }
+}
+
+/* =========================
+    Save Data to Backend
+    ========================= 
+*/
 async function savePlayerToDB(username = "guest") {
     const payload = await collectPlayerState(username);
 
@@ -2740,6 +2766,13 @@ async function init() {
         onClick: showBattle,
     });
     addHeaderButton("secondary", {
+        id: "btnOnlineBattle",
+        text: "⚔️ Online Battle",
+        title: "Online Battle",
+        onClick: openOnlineBattleView,
+    });
+
+    addHeaderButton("secondary", {
         id: "btnParty",
         text: "🎒 Party",
         title: "Party & Storage",
@@ -2873,6 +2906,25 @@ async function init() {
     // battle panel buttons
     $("#btnHome")?.addEventListener("click", showPicker);
     $("#btnStartBattle")?.addEventListener("click", startBattle);
+    document.getElementById("btnFindMatch")?.addEventListener("click", () => {
+        console.log("Finding match...");
+        document.getElementById("bcText").innerHTML = "Finding match...";
+        // TODO: call your matchmaking API
+    });
+
+    document.getElementById("btnCreateRoom")?.addEventListener("click", () => {
+        console.log("Creating room...");
+        // TODO: generate room code
+    });
+
+    document.getElementById("btnJoinRoom")?.addEventListener("click", () => {
+        const code = document.getElementById("roomCodeInput").value.trim();
+        if (!code) return;
+        console.log("Joining room:", code);
+    });
+
+    document.getElementById("btnOnlineBack").addEventListener("click", showPicker);
+
     $("#btnPokeStop")?.addEventListener("click", openPokeStop);
     $("#migrateData")?.addEventListener("click", migrateOldStorage);
     document.addEventListener("click", (e) => {

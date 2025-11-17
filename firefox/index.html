@@ -37,7 +37,8 @@
     </header>
 
     <!-- ============= Register / Login VIEW ============= -->
-    <section id="viewLoginRegister"
+    <section
+      id="viewLoginRegister"
       class="h-auto d-flex align-items-center justify-content-center bg-dark bg-gradient hidden"
     >
       <div
@@ -151,7 +152,8 @@
       </div>
     </section>
 
-    <section id="viewRegister"
+    <section
+      id="viewRegister"
       class="h-auto d-flex align-items-center justify-content-center bg-dark bg-gradient hidden"
     >
       <div
@@ -320,6 +322,76 @@
           Start Battle
         </button>
         <span id="battleStatus" class="muted tiny"></span>
+      </div>
+    </section>
+    <!-- ============= ONLINE BATTLE VIEW ============= -->
+    <section
+      id="viewOnlineBattle"
+      class="h-auto d-flex align-items-center justify-content-center bg-dark bg-gradient hidden"
+    >
+      <div
+        class="card shadow-lg border-0"
+        style="max-width: 520px; width: 100%"
+      >
+        <div class="card-body p-4 p-md-5">
+          <!-- Header -->
+          <div class="text-center mb-4">
+            <div
+              class="rounded-circle bg-danger bg-opacity-10 d-inline-flex align-items-center justify-content-center mb-2"
+              style="width: 72px; height: 72px"
+            >
+              <i class="bi bi-crosshair2 fs-1 text-danger"></i>
+            </div>
+            <h3 class="fw-bold text-danger mb-1">Online Battle</h3>
+            <p class="small text-white-50 mb-0">
+              Fight players around the world in real-time Pokémon battles!
+            </p>
+          </div>
+
+          <!-- Battle Content -->
+          <div id="battleContent" class="mb-4 text-center text-white">
+            <p id="bcText" class="mb-1 fs-5 fw-light">Choose how you want to battle:</p>
+          </div>
+
+          <!-- Find Match Button -->
+          <div class="d-grid mb-3">
+            <button id="btnFindMatch" class="btn btn-danger btn-lg">
+              <i class="bi bi-lightning-charge-fill me-1"></i> Find Match
+            </button>
+          </div>
+
+          <!-- Create / Join Room -->
+          <div class="d-flex flex-column gap-2">
+            <div class="input-group">
+              <span class="input-group-text">
+                <i class="bi bi-door-open"></i>
+              </span>
+              <input
+                type="text"
+                id="roomCodeInput"
+                class="form-control"
+                placeholder="Enter Room Code"
+              />
+              <button class="btn btn-primary" id="btnJoinRoom">
+                <i class="bi bi-box-arrow-in-right"></i>
+              </button>
+            </div>
+
+            <button id="btnCreateRoom" class="btn btn-outline-primary w-100">
+              <i class="bi bi-plus-circle me-1"></i> Create Private Room
+            </button>
+          </div>
+
+          <!-- Divider -->
+          <hr class="text-secondary my-4" />
+
+          <!-- Back -->
+          <div class="text-center">
+            <button id="btnOnlineBack" class="btn btn-outline-light">
+              <i class="bi bi-arrow-left"></i> Back
+            </button>
+          </div>
+        </div>
       </div>
     </section>
 
