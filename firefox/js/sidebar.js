@@ -8,6 +8,12 @@ const API_BASE = "https://dstokesncstudio.com/pokeapi/pokeapi.php";
 const GET_POKEMON = (name) => `${API_BASE}?action=getPokemon&name=${encodeURIComponent(String(name).toLowerCase())}`;
 const dev = false;
 const MAX_DEX = 1025;
+let POKEMON_DATA = null;
+const POKEMON_DATA_VERSION = 1;
+// In-memory cache
+let ITEMS_DATA = null;
+// Increase version if you change the JSON structure/content
+const ITEMS_DATA_VERSION = 1;
 let party = [];           // player's current party (max 6)
 // ===== Party/Storage keys =====
 const PARTY_KEY = "party";
@@ -24,6 +30,14 @@ const STORE = {
 /* =========================
    BALLS: CONFIG + HELPERS
    ========================= */
+const POTION_HEAL = {
+    "potion": 20,
+    "super-potion": 50,
+    "hyper-potion": 120,
+    "max-potion": 9999,
+    "full-restore": 9999
+};
+
 const BALLS = {
     poke: { label: "Poké Ball", key: "balls", store: "playerStats", mult: 1.0, icon: "⭕" },
     great: { label: "Great Ball", key: STORE.greatBalls, store: "local", mult: 1.5, icon: "🔵" },
@@ -63,32 +77,66 @@ const SOUNDS = {
         "https://github.com/D-Stokes-NC-Gaming-Studio/pokemon-tampermonkey/raw/refs/heads/main/sounds/05%20Battle%20Dome%201.mp3"
     ),
 };
-
+const pokeData = await loadPokemonData();
+const ItemsAndMachines = await loadItemsAndMachines();
 let selectedBall = "poke"; // default
+const BALL_ITEM_MAP = {
+    poke: "poke-ball",
+    great: "great-ball",
+    ultra: "ultra-ball",
+    master: "master-ball"
+};
+async function getInventory() {
+    const stored = await browser.storage.local.get("playerStats");
+    let stats = stored.playerStats || [];
+
+    let entry = stats.find(x => x[0] === "inventory");
+    if (!entry) {
+        entry = ["inventory", {}];
+        stats.push(entry);
+        await browser.storage.local.set({ playerStats: stats });
+    }
+
+    return entry[1]; // return inventory object
+}
+
+async function saveInventory(inv) {
+    const stored = await browser.storage.local.get("playerStats");
+    let stats = stored.playerStats || [];
+
+    let entry = stats.find(x => x[0] === "inventory");
+    if (!entry) {
+        entry = ["inventory", inv];
+        stats.push(entry);
+    } else {
+        entry[1] = inv;
+    }
+
+    await browser.storage.local.set({ playerStats: stats });
+}
+
 async function getBallCount(type) {
-    const b = BALLS[type];
-    if (!b) return 0;
-    if (b.store === "playerStats") {
-        const { playerStats } = await browser.storage.local.get("playerStats");
-        return playerStats?.[b.key] | 0;
-    } else {
-        return await getNum(b.key, 0);
-    }
+    const inv = await getInventory();
+    const itemName = BALL_ITEM_MAP[type];
+    if (!itemName) return 0;
+    return inv[itemName] || 0;
 }
+
 async function setBallCount(type, newVal) {
-    const b = BALLS[type];
-    if (!b) return;
-    if (b.store === "playerStats") {
-        const pack = (await browser.storage.local.get("playerStats"))?.playerStats || {};
-        pack[b.key] = Math.max(0, Number(newVal) || 0);
-        await browser.storage.local.set({ playerStats: pack });
-    } else {
-        await setNum(b.key, Math.max(0, Number(newVal) || 0));
-    }
+    const inv = await getInventory();
+    const itemName = BALL_ITEM_MAP[type];
+    if (!itemName) return;
+
+    inv[itemName] = Math.max(0, Number(newVal) || 0);
+
+    await saveInventory(inv);
 }
+
 async function decBall(type) {
-    await setBallCount(type, (await getBallCount(type)) - 1);
+    const current = await getBallCount(type);
+    await setBallCount(type, current - 1);
 }
+
 /*
 *  *    Build a ball button with a corner badge
 *       Important
@@ -125,7 +173,6 @@ async function updateBallBadges(container) {
 
     for (const t of order) {
         const cnt = await getBallCount(t);
-        // find the badge/button for this type under the given container
         const badge = root.querySelector(`.count-badge[data-ball="${t}"]`);
         const btn = badge?.closest(".item-btn");
 
@@ -134,8 +181,8 @@ async function updateBallBadges(container) {
         badge.textContent = String(cnt);
         btn.classList.toggle("item-empty", cnt <= 0);
         btn.disabled = cnt <= 0;
-        // active outline
-        if (t === pick) btn.classList.add("active"); else btn.classList.remove("active");
+
+        btn.classList.toggle("active", t === pick);
     }
 }
 async function updateBallSelect() {
@@ -143,17 +190,20 @@ async function updateBallSelect() {
     if (!select) return;
 
     const order = ["poke", "great", "ultra", "master"];
+
     for (const t of order) {
-        const conf = BALLS[t];
         const cnt = await getBallCount(t);
+        const conf = BALLS[t];
         const opt = select.querySelector(`option[value="${t}"]`);
+
         if (opt) {
             opt.textContent = `${conf.icon} ${conf.label} (${cnt})`;
             opt.disabled = cnt <= 0;
-            if (t === selectedBall) opt.selected = true;
+            opt.selected = (t === selectedBall);
         }
     }
 }
+
 /*
 ========================
     Register User
@@ -173,85 +223,38 @@ function initPasswordToggle() {
         icon.classList.toggle("bi-eye", isPwd);
     });
 }
-
 async function initLoginRegisterSystem() {
     return new Promise(async (resolve) => {
-        // Sections
-        const loginSection = document.getElementById("viewLoginRegister");
-        const registerSection = document.getElementById("viewRegister");
 
-        // Divs
-        const loginDiv = document.getElementById("loginDiv");
-        const registerDiv = document.getElementById("registerDiv");
+        // DOM Elements
+        const loginSection     = $("#viewLoginRegister");
+        const registerSection  = $("#viewRegister");
+        const loginDiv         = $("#loginDiv");
+        const registerDiv      = $("#registerDiv");
 
-        // Status
-        const statusLogin = document.getElementById("statusLogin");
-        const statusRegister = document.getElementById("statusRegister");
+        const statusLogin      = $("#statusLogin");
+        const statusRegister   = $("#statusRegister");
 
-        // Inputs (login)
-        const usernameInput = document.getElementById("username");
-        const passwordInput = document.getElementById("password");
-        const rememberMe = document.getElementById("rememberMe");
-        const loginBtn = document.getElementById("loginBtn");
+        const usernameInput    = $("#username");
+        const passwordInput    = $("#password");
+        const rememberMe       = $("#rememberMe");
+        const loginBtn         = $("#loginBtn");
 
-        // Inputs (register)
-        const regUsername = document.getElementById("reg_username");
-        const regPassword = document.getElementById("reg_password");
-        const regPassword2 = document.getElementById("reg_password_confirm");
-        const registerBtn = document.getElementById("registerBtn");
+        const regUsername      = $("#reg_username");
+        const regPassword      = $("#reg_password");
+        const regPassword2     = $("#reg_password_confirm");
+        const registerBtn      = $("#registerBtn");
 
-        // Links
-        const registerMe = document.getElementById("registerMe");
-        const goToLoginLink = document.getElementById("goToLoginLink");
+        const registerMe       = $("#registerMe");
+        const goToLoginLink    = $("#goToLoginLink");
 
-        //-----------------------------------------------------------
+
+        // -----------------------------------------------------------
         // HELPERS
-        //-----------------------------------------------------------
+        // -----------------------------------------------------------
         function showStatus(el, message, type = "info") {
             el.textContent = message;
             el.className = `small d-flex mb-3 text-${type} align-items-center justify-content-center`;
-        }
-        // STEP A — Attempt auto-login from saved storage
-        async function tryAutoLogin() {
-            let stored = null;
-
-            // Extension storage
-            try {
-                if (browser?.storage?.local) {
-                    const s = await browser.storage.local.get("username");
-                    if (s.username) stored = s.username;
-                }
-            } catch { }
-
-            // Browser storage fallbacks
-            stored = stored || localStorage.getItem("username") || sessionStorage.getItem("username");
-
-            if (!stored) return null;
-
-            // Try auto-login with backend
-            const res = await fetch("https://dstokesncstudio.com/pokeBackend/api/getUser.php", {
-                method: "GET",
-                headers: { "X-Session-User": stored }
-            });
-
-            const json = await res.json();
-            console.log("AUTO LOGIN getUser result:", json);
-
-            if (json.success === true && json.data) {
-                console.log("Auto-login success:", stored);
-                return stored;
-            }
-
-            return null;
-        }
-
-        async function saveUser(username) {
-            try {
-                if (browser?.storage?.local)
-                    await browser.storage.local.set({ username });
-            } catch { }
-            localStorage.setItem("username", username);
-            sessionStorage.setItem("username", username);
         }
 
         function showLogin() {
@@ -266,97 +269,84 @@ async function initLoginRegisterSystem() {
             registerDiv.classList.remove("hidden");
         }
 
+        async function saveUser(username) {
+            try {
+                await browser.storage.local.set({ username });
+            } catch {}
+
+            localStorage.setItem("username", username);
+            sessionStorage.setItem("username", username);
+        }
+
         async function loadStoredUsername() {
             let stored = null;
 
             try {
-                if (browser?.storage?.local) {
-                    const r = await browser.storage.local.get("username");
-                    if (r.username) stored = r.username;
-                }
-            } catch { }
+                const r = await browser.storage.local.get("username");
+                if (r.username) stored = r.username;
+            } catch {}
 
-            stored =
-                stored ||
-                localStorage.getItem("username") ||
-                sessionStorage.getItem("username");
+            stored = stored || localStorage.getItem("username") || sessionStorage.getItem("username");
 
-            if (stored)
-                sessionStorage.setItem("username", stored);
-
+            if (stored) sessionStorage.setItem("username", stored);
             return stored;
         }
 
-        //-----------------------------------------------------------
-        // BACKEND FLOW: check user → or register new
-        //-----------------------------------------------------------
-        async function checkOrRegister(username, statusEl) {
-            username = (username || "").trim();
 
-            if (username.length < 3) {
-                showStatus(statusEl, "Username must be at least 3 characters.", "danger");
-                return null;
-            }
+        // -----------------------------------------------------------
+        // BACKEND CALLS
+        // -----------------------------------------------------------
 
-            showStatus(statusEl, "Checking username…", "info");
-
-            try {
-                const resCheck = await fetch(
-                    "https://dstokesncstudio.com/pokeBackend/api/getUser.php",
-                    {
-                        method: "GET",
-                        headers: {
-                            "X-Session-User": username
-                        }
-                    }
-                );
-
-                const jsonCheck = await resCheck.json(); // read body ONCE
-                console.log("getUser.php returned:", jsonCheck); // ✔️ log stored data
-
-                if (jsonCheck.success || jsonCheck.status === "success") {
-                    await saveUser(username);
-                    showStatus(statusEl, `Welcome back, ${username}!`, "success");
-                    return username;
+        // 🔹 Check if user exists
+        async function checkUserExists(username) {
+            const res = await fetch(
+                "https://dstokesncstudio.com/pokeBackend/api/getUser.php",
+                {
+                    method: "GET",
+                    headers: { "X-Session-User": username }
                 }
+            );
 
-                // Register fresh
-                showStatus(statusEl, "Registering user…", "info");
-
-                const resReg = await fetch(
-                    "https://dstokesncstudio.com/pokeBackend/api/registerUser.php",
-                    {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({ username }),
-                    }
-                );
-
-                const jsonReg = await resReg.json();
-
-                if (jsonReg.success || jsonReg.status === "success") {
-                    await saveUser(username);
-                    showStatus(statusEl, `Account created!`, "success");
-                    return username;
-                }
-
-                if (jsonReg.message?.includes("taken")) {
-                    showStatus(statusEl, "Username already taken.", "danger");
-                    return null;
-                }
-
-                showStatus(statusEl, jsonReg.message || "Unknown error.", "warning");
-                return null;
-            } catch (e) {
-                console.error(e);
-                showStatus(statusEl, "Server unreachable.", "danger");
-                return null;
-            }
+            const json = await res.json();
+            return json.success === true && json.data;
         }
 
-        //-----------------------------------------------------------
+        // 🔹 Register new user
+        async function registerUser(username) {
+            const res = await fetch(
+                "https://dstokesncstudio.com/pokeBackend/api/registerUser.php",
+                {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ username }),
+                }
+            );
+
+            const json = await res.json();
+            return json.success === true;
+        }
+
+
+        // -----------------------------------------------------------
+        // AUTO LOGIN IF USER EXISTS LOCALLY
+        // -----------------------------------------------------------
+        async function tryAutoLogin() {
+            const stored = await loadStoredUsername();
+            if (!stored) return null;
+
+            const exists = await checkUserExists(stored);
+            if (exists) {
+                await migrateOldBallSystemToInventory();
+                return stored;
+            }
+
+            return null;
+        }
+
+
+        // -----------------------------------------------------------
         // EVENTS
-        //-----------------------------------------------------------
+        // -----------------------------------------------------------
         registerMe.addEventListener("click", (e) => {
             e.preventDefault();
             showRegister();
@@ -369,56 +359,99 @@ async function initLoginRegisterSystem() {
             showStatus(statusLogin, "Welcome back!", "info");
         });
 
+
+        // -----------------------------------------------------------
+        // LOGIN BUTTON
+        // -----------------------------------------------------------
         loginBtn.addEventListener("click", async () => {
-            const username = usernameInput.value;
-            const finalUser = await checkOrRegister(username, statusLogin);
+            const username = usernameInput.value.trim();
 
-            if (!finalUser) return;
+            if (username.length < 3) {
+                showStatus(statusLogin, "Username must be at least 3 characters.", "danger");
+                return;
+            }
 
-            if (rememberMe.checked)
-                await saveUser(finalUser);
+            showStatus(statusLogin, "Checking account…", "info");
 
-            resolve(finalUser); // <-- IMPORTANT
+            const exists = await checkUserExists(username);
+
+            if (!exists) {
+                showStatus(statusLogin, "User not found. Please register.", "danger");
+                return;
+            }
+
+            // SUCCESSFUL LOGIN
+            await saveUser(username);
+            await migrateOldBallSystemToInventory();
+
+            showStatus(statusLogin, `Welcome back, ${username}!`, "success");
+
+            resolve(username);
         });
 
+
+        // -----------------------------------------------------------
+        // REGISTER BUTTON
+        // -----------------------------------------------------------
         registerBtn.addEventListener("click", async () => {
+            const username = regUsername.value.trim();
+
             if (regPassword.value !== regPassword2.value) {
                 showStatus(statusRegister, "Passwords do not match.", "danger");
                 return;
             }
 
-            const username = regUsername.value;
-            const finalUser = await checkOrRegister(username, statusRegister);
+            if (username.length < 3) {
+                showStatus(statusRegister, "Username must be at least 3 characters.", "danger");
+                return;
+            }
 
-            if (!finalUser) return;
+            showStatus(statusRegister, "Checking username…", "info");
 
-            usernameInput.value = finalUser;
+            const exists = await checkUserExists(username);
+
+            if (exists) {
+                showStatus(statusRegister, "Username already taken.", "danger");
+                return;
+            }
+
+            showStatus(statusRegister, "Creating account…", "info");
+
+            const success = await registerUser(username);
+
+            if (!success) {
+                showStatus(statusRegister, "Error creating account.", "danger");
+                return;
+            }
+
+            showStatus(statusRegister, "Account created! Please log in.", "success");
+
+            // move back to login screen
+            usernameInput.value = username;
             showLogin();
-            showStatus(statusLogin, "Account created! Please log in.", "success");
         });
 
-        //-----------------------------------------------------------
-        // AUTO LOAD IF USER EXISTS
-        //-----------------------------------------------------------
-        const autoUser = await tryAutoLogin();
-        if (autoUser) {
-            resolve(autoUser);
+
+        // -----------------------------------------------------------
+        // INITIAL PAGE LOAD
+        // -----------------------------------------------------------
+        const auto = await tryAutoLogin();
+        if (auto) {
+            resolve(auto);
             return;
         }
-        const stored = await loadStoredUsername();
 
+        const stored = await loadStoredUsername();
         if (stored) {
             usernameInput.value = stored;
             showLogin();
             showStatus(statusLogin, `Welcome back, ${stored}!`, "success");
-
         } else {
             showRegister();
             showStatus(statusRegister, "Create your account", "info");
         }
     });
 }
-
 
 async function promptUsernameAndRegister() {
     // ✅ Try persistent sources first
@@ -491,8 +524,6 @@ async function promptUsernameAndRegister() {
 
     return null;
 }
-
-
 async function syncUserDataToBackend() {
     const { username } = await browser.storage.local.get("username");
     if (!username) return;
@@ -522,9 +553,6 @@ async function syncUserDataToBackend() {
         if (!j.success) console.warn("Sync failed:", j);
     }).catch(err => console.error("Sync error:", err));
 }
-
-
-
 /*
 =========================
     COINS
@@ -607,6 +635,7 @@ function showPicker() {
     $("#viewParty")?.classList.add("hidden");
     $("#viewSettings")?.classList.add("hidden");
     $("#viewOnlineBattle")?.classList.add("hidden");
+    $("#viewStore")?.classList.add("hidden");
     if (wild) endBattle();
     playSound("stop", false);
 }
@@ -619,6 +648,7 @@ function showDex() {
     $("#viewParty")?.classList.add("hidden");
     $("#viewBattle")?.classList.add("hidden");
     $("#viewOnlineBattle")?.classList.add("hidden");
+    $("#viewStore")?.classList.add("hidden");
     playSound("stop", false);
 }
 function showBattle() {
@@ -630,6 +660,8 @@ function showBattle() {
     $("#viewParty")?.classList.add("hidden");
     $("#viewSettings")?.classList.add("hidden");
     $("#viewOnlineBattle")?.classList.add("hidden");
+    $("#viewStore")?.classList.add("hidden");
+    
     playSound("stop");
     if (!wild) endBattle(); else renderBattle();
 }
@@ -709,7 +741,6 @@ function renderThreeBalls(pool) {
 function showResult(p) {
     window.__hasResult = true;
     $("#resultCard")?.classList.remove("hidden");
-    console.log(p);
     const spriteBox = $("#resultSprite");
     if (spriteBox) {
         spriteBox.innerHTML = "";
@@ -981,6 +1012,7 @@ async function openDex() {
     document.querySelector("#viewParty")?.classList.add("hidden");
     document.querySelector("#viewDex")?.classList.remove("hidden");
     document.querySelector("#viewSettings")?.classList.add("hidden");
+    $("#viewStore")?.classList.add("hidden");
     $("#viewOnlineBattle")?.classList.add("hidden");
     playSound("stop");
 
@@ -1376,39 +1408,39 @@ function hpBar(current, max) {
 }
 // All legendary + mythical IDs
 const LEGENDARY_IDS = [
-  144,145,146,150,
-  243,244,245,249,250,
-  377,378,379,380,381,382,383,384,
-  480,481,482,483,484,485,486,487,488,
-  638,639,640,641,642,643,644,645,646,
-  716,717,718,
-  772,773,785,786,787,788,789,790,791,792,800,
-  888,889,890,891,892,894,895,896,897,898,
-  1001,1002,1003,1004,
-  1007,1008,1009,1010,1024
+    144, 145, 146, 150,
+    243, 244, 245, 249, 250,
+    377, 378, 379, 380, 381, 382, 383, 384,
+    480, 481, 482, 483, 484, 485, 486, 487, 488,
+    638, 639, 640, 641, 642, 643, 644, 645, 646,
+    716, 717, 718,
+    772, 773, 785, 786, 787, 788, 789, 790, 791, 792, 800,
+    888, 889, 890, 891, 892, 894, 895, 896, 897, 898,
+    1001, 1002, 1003, 1004,
+    1007, 1008, 1009, 1010, 1024
 ];
 
 const MYTHICAL_IDS = [
-  151,
-  251,
-  385,386,
-  489,490,491,492,493,
-  494,647,648,649,
-  719,720,721,
-  801,802,807,808,809,
-  893
+    151,
+    251,
+    385, 386,
+    489, 490, 491, 492, 493,
+    494, 647, 648, 649,
+    719, 720, 721,
+    801, 802, 807, 808, 809,
+    893
 ];
 
 // Sets for fast lookup
 const LEGENDARY_SET = new Set(LEGENDARY_IDS);
-const MYTHICAL_SET  = new Set(MYTHICAL_IDS);
+const MYTHICAL_SET = new Set(MYTHICAL_IDS);
 
 function getRarityByDex(num) {
-    if (MYTHICAL_SET.has(num))  return "mythical";   // or "legendary" if you want them merged
+    if (MYTHICAL_SET.has(num)) return "mythical";   // or "legendary" if you want them merged
     if (LEGENDARY_SET.has(num)) return "legendary";
 
     if (num % 25 === 0) return "rare";
-    if (num % 7 === 0)  return "uncommon";
+    if (num % 7 === 0) return "uncommon";
     return "common";
 }
 
@@ -1625,7 +1657,8 @@ function spriteWithHP({ label, imgSrc, cur, max, flip = false, extraClass = "" }
     return col;
 }
 async function renderBattle(msg) {
-    const panel = $("#battlePanel"); if (!panel) return;
+    const panel = $("#battlePanel");
+    if (!panel) return;
     panel.innerHTML = "";
 
     const card = document.createElement("div");
@@ -1663,7 +1696,8 @@ async function renderBattle(msg) {
     const mult = BALLS[selectedBall]?.mult || 1.0;
     chance = Math.min(0.95, Math.max(0.1, chance * mult));
 
-    const expLine = `<div class="tiny muted">EXP ${player.exp || 0} / ${player.expToNext || expToNext(player.level)}</div>`;
+    const expLine = `<div class='tiny muted'>EXP ${player.exp || 0} / ${player.expToNext || expToNext(player.level)}</div>`;
+
     info.innerHTML = `
       <div class="tiny muted">Selected: ${BALLS[selectedBall]?.label || "Poké Ball"}</div>
       <div style="font-weight:600;">${wild.name} ${wild.isShiny ? "✨" : ""}</div>
@@ -1685,23 +1719,47 @@ async function renderBattle(msg) {
 
     top.append(wildCol, info, youCol);
 
-    // ===== Controls (unchanged below)… =====
+    // ===========================================
+    // CONTROLS
+    // ===========================================
     const ctl = document.createElement("div");
     ctl.className = "battle-ctl";
-    [
-        { txt: '⚔️ Attack', fn: playerAttack },
-        { txt: '⭕ Ball', fn: throwBall },
-        { txt: '🧪 Potion', fn: usePotion },
-        { txt: '🏃 Run', fn: runAway }
-    ].forEach(a => {
-        const b = document.createElement("button");
-        b.className = "btn btn-success btn-sm";
-        b.textContent = a.txt;
-        b.onclick = a.fn;
-        ctl.appendChild(b);
-    });
 
-    // Sleep Powder
+    // ====== Attack Button ======
+    const bAtk = document.createElement("button");
+    bAtk.className = "btn btn-success btn-sm";
+    bAtk.textContent = "⚔️ Attack";
+    bAtk.onclick = playerAttack;
+    ctl.appendChild(bAtk);
+
+    // ====== Ball Button ======
+    const bBall = document.createElement("button");
+    bBall.className = "btn btn-success btn-sm";
+    bBall.textContent = "⭕ Ball";
+    bBall.onclick = throwBall;
+    ctl.appendChild(bBall);
+
+    // ====== Potion Button (disabled if none) ======
+    const inv = await getInventory();
+    const totalPotions = Object.entries(inv)
+        .filter(([k, v]) => POTION_HEAL[k])
+        .reduce((a, [k, v]) => a + v, 0);
+
+    const bPot = document.createElement("button");
+    bPot.className = "btn btn-success btn-sm";
+    bPot.textContent = `🧪 Potion`;
+    bPot.onclick = () => usePotion(selectedPotion);
+    bPot.disabled = totalPotions <= 0;
+    ctl.appendChild(bPot);
+
+    // ====== Run Button ======
+    const bRun = document.createElement("button");
+    bRun.className = "btn btn-success btn-sm";
+    bRun.textContent = "🏃 Run";
+    bRun.onclick = runAway;
+    ctl.appendChild(bRun);
+
+    // ====== Sleep Powder ======
     const sleepBtn = document.createElement("button");
     sleepBtn.className = "btn btn-success btn-sm";
     sleepBtn.textContent = "🌙 Sleep Powder";
@@ -1717,7 +1775,9 @@ async function renderBattle(msg) {
     };
     ctl.appendChild(sleepBtn);
 
-    // ----- Ball selector (dropdown) -----
+    // ===========================================
+    // Ball Selector
+    // ===========================================
     const ballRow = document.createElement("div");
     ballRow.className = "tiny";
     Object.assign(ballRow.style, {
@@ -1758,14 +1818,66 @@ async function renderBattle(msg) {
     ballRow.append(ballLabel, select);
     ctl.appendChild(ballRow);
 
-    // Update select counts/enabled state now
-    await updateBallSelect();
-    //await syncUserDataToBackend();
+    // ===========================================
+    // Potion Selector Dropdown
+    // ===========================================
+    const potionRow = document.createElement("div");
+    potionRow.className = "tiny";
+    Object.assign(potionRow.style, {
+        display: "flex",
+        alignItems: "center",
+        gap: "6px",
+        marginTop: "4px"
+    });
 
-    // Compose card
+    const potionLabel = document.createElement("label");
+    potionLabel.textContent = "Potion:";
+    potionLabel.style.opacity = "0.8";
+
+    const potSelect = document.createElement("select");
+    potSelect.id = "potionSelect";
+    potSelect.className = "input";
+    potSelect.style.flex = "1";
+
+    let selectedPotion = null;
+
+    for (const [name, qty] of Object.entries(inv)) {
+        if (!POTION_HEAL[name]) continue;
+
+        const opt = document.createElement("option");
+        opt.value = name;
+        opt.textContent = `${name.replace(/-/g, " ")} (${qty})`;
+        potSelect.appendChild(opt);
+
+        if (!selectedPotion) selectedPotion = name;
+    }
+
+    if (!selectedPotion) {
+        const opt = document.createElement("option");
+        opt.textContent = "No potions";
+        potSelect.appendChild(opt);
+        potSelect.disabled = true;
+    }
+
+    potSelect.onchange = () => {
+        selectedPotion = potSelect.value;
+    };
+
+    potionRow.append(potionLabel, potSelect);
+    ctl.appendChild(potionRow);
+
+    // ===========================================
+    // Update ball counts
+    // ===========================================
+    await updateBallSelect();
+
+    // ===========================================
+    // Final layout
+    // ===========================================
     card.append(top, ctl);
     panel.appendChild(card);
 }
+
 async function playerAttack() {
     const player = await getPlayerMon();
     const dmg = calcDamage(player, wild, 40);
@@ -1856,43 +1968,48 @@ async function grantExpForWin(wildMon) {
     return { gain, leveled, level: mon.level };
 }
 async function usePotion() {
-    // Load party and caught list
-    const { party } = await browser.storage.local.get("party");
-    const caught = await getCaughtWithUID();
-    const byUID = mapCaughtByUID(caught);
+    const inv = await getInventory();
 
-    // Ensure valid party and resolve UID
-    if (!party?.[0]) return;
-    let player = typeof party[0] === "string" ? byUID.get(party[0]) : party[0];
-    if (!player || !player.stats) {
-        renderBattle("No valid Pokémon in party!");
+    // Which potion do we try?
+    const potionOrder = [
+        "full-restore",
+        "max-potion",
+        "hyper-potion",
+        "super-potion",
+        "potion"
+    ];
+
+    let chosen = null;
+
+    for (const p of potionOrder) {
+        if ((inv[p] || 0) > 0) {
+            chosen = p;
+            break;
+        }
+    }
+
+    if (!chosen) {
+        renderBattle("You have no healing items!");
+        setTimeout(wildAttack, 500);
         return;
     }
 
-    // Load potions from playerStats
-    const store = (await browser.storage.local.get("playerStats"))?.playerStats || { potions: 0 };
-    if ((store.potions | 0) <= 0) {
-        renderBattle(`You have no potions!`);
-        return;
-    }
-    store.potions--;
+    const heal = POTION_HEAL[chosen] || 20;
+    const player = await getPlayerMon();
+    const oldHP = player.currentHP;
 
-    // Heal calculation
-    const heal = Math.max(10, Math.floor(player.stats.hp * 0.25));
-    player.currentHP = Math.min(player.stats.hp, (player.currentHP || 0) + heal);
+    player.currentHP = Math.min(player.stats.hp, oldHP + heal);
 
-    // Save back updated mon
-    party[0] = player.uid || player; // keep UID or object depending on design
-    await Promise.all([
-        browser.storage.local.set({ party }),
-        browser.storage.local.set({ playerStats: store }),
-        // Also update caught list with new HP
-        setCaught(caught.map(m => m.uid === player.uid ? player : m))
-    ]);
+    inv[chosen]--;
+    if (inv[chosen] <= 0) delete inv[chosen];
 
-    renderBattle(`You used a potion and healed ${heal} HP.`);
+    await saveInventory(inv);
+    await setPlayerMon(player);
+
+    renderBattle(`Used ${chosen.replace(/-/g, " ")}! HP restored.`);
     setTimeout(wildAttack, 500);
 }
+
 async function throwBall() {
     const ball = BALLS[selectedBall] || BALLS.poke;
 
@@ -1998,73 +2115,90 @@ async function openPokeStop() {
         return;
     }
 
-    // Always some coins
-    const coinAmount = Math.floor(Math.random() * 91) + 10; // 10–100
+    //-------------------------------------------------------
+    // ALWAYS load the SAME inventory format as shop
+    //-------------------------------------------------------
+    const inv = await getInventory();   // <-- uses your array format
+
+    //-------------------------------------------------------
+    // COINS
+    //-------------------------------------------------------
+    const coinAmount = Math.floor(Math.random() * 91) + 10;
     const prevCoins = await getNum(STORE.coins, 0);
     await setNum(STORE.coins, prevCoins + coinAmount);
 
-    // One ball type (weighted)
+    //-------------------------------------------------------
+    // BALLS (weighted)
+    //-------------------------------------------------------
     const roll = Math.random();
-    let ballKind = "poke"; // default
-    if (roll > 0.75 && roll <= 0.95) ballKind = "great";
-    else if (roll > 0.95) ballKind = "ultra";
+    let itemKey = "poke-ball";
 
-    const ballAmount = Math.floor(Math.random() * 5) + 1; // 1–5
-    const inv = (await browser.storage.local.get("playerStats"))?.playerStats || { balls: 0, potions: 0 };
+    if (roll > 0.75 && roll <= 0.95) itemKey = "great-ball";
+    else if (roll > 0.95) itemKey = "ultra-ball";
 
-    if (ballKind === "poke") {
-        inv.balls = (inv.balls | 0) + ballAmount; // your game uses playerStats.balls
-    } else if (ballKind === "great") {
-        const n = await getNum(STORE.greatBalls, 0);
-        await setNum(STORE.greatBalls, n + ballAmount);
-    } else {
-        const n = await getNum(STORE.ultraBalls, 0);
-        await setNum(STORE.ultraBalls, n + ballAmount);
-    }
+    const ballAmount = 1 + Math.floor(Math.random() * 5);
+    inv[itemKey] = (inv[itemKey] || 0) + ballAmount;
 
-    // 30% chance: potions (1–3)
+    //-------------------------------------------------------
+    // POTIONS (30%)
+    //-------------------------------------------------------
     let potionLine = "";
     if (Math.random() < 0.30) {
         const pots = 1 + Math.floor(Math.random() * 3);
-        inv.potions = (inv.potions | 0) + pots;
+
+        inv["potion"] = (inv["potion"] || 0) + pots;
         potionLine = `\n🧪 +${pots} Potion${pots > 1 ? "s" : ""}`;
     }
 
-    // Rare Master Ball (2.5%)
+    //-------------------------------------------------------
+    // MASTER BALL (2.5%)
+    //-------------------------------------------------------
     let masterLine = "";
     if (Math.random() < 0.025) {
-        const n = await getNum(STORE.masterBalls, 0);
-        await setNum(STORE.masterBalls, n + 1);
+        inv["master-ball"] = (inv["master-ball"] || 0) + 1;
         masterLine = `\n🎱 +1 Master Ball!`;
     }
 
-    // Save back playerStats if we touched it
-    await browser.storage.local.set({ playerStats: inv });
+    //-------------------------------------------------------
+    // SAVE using the shop's system
+    //-------------------------------------------------------
+    await saveInventory(inv);   // <-- correct: updates playerStats array
+
     if (!$("#viewBattle")?.classList.contains("hidden")) {
         await updateBallSelect();
     }
 
-    const ballName =
-        ballKind === "poke" ? "Poké Ball" :
-            ballKind === "great" ? "Great Ball" : "Ultra Ball";
+    //-------------------------------------------------------
+    // Toast message
+    //-------------------------------------------------------
+    const prettyName =
+        itemKey === "poke-ball" ? "Poké Ball" :
+        itemKey === "great-ball" ? "Great Ball" :
+        itemKey === "ultra-ball" ? "Ultra Ball" : "Item";
 
     toast(
         `📍 PokéStop Reward:\n\n` +
         `🪙 +${coinAmount} Coins\n` +
-        `🎁 +${ballAmount} ${ballName}` +
-        potionLine + masterLine
+        `🎁 +${ballAmount} ${prettyName}` +
+        potionLine +
+        masterLine
     );
 
-    // Cooldown 1–5 minutes
+    //-------------------------------------------------------
+    // Cooldown (1–5 minutes)
+    //-------------------------------------------------------
     const cooldownMs = (1 + Math.floor(Math.random() * 5)) * 60 * 1000;
     await setNum(STORE.cooldown, now + cooldownMs);
-    // Start ticker if not running
+
     if (!pokestopTimer) {
         pokestopTimer = setInterval(updatePokeStopStatus, 1000);
     }
     updatePokeStopStatus();
+
     await syncUserDataToBackend();
 }
+
+
 /* =========================
     Inventory Helpers
     ========================= */
@@ -2119,6 +2253,7 @@ function openSettings() {
     $("#viewParty")?.classList.add("hidden");
     $("#viewSettings")?.classList.remove("hidden");
     $("#viewOnlineBattle")?.classList.add("hidden");
+    $("#viewStore")?.classList.add("hidden");
     playSound("stop");
 
 }
@@ -2532,6 +2667,7 @@ async function openPartyView() {
     document.getElementById("viewSettings")?.classList?.add("hidden");
     document.getElementById("viewParty")?.classList.remove("hidden");
     $("#viewOnlineBattle")?.classList.add("hidden");
+    $("#viewStore")?.classList.add("hidden");
     playSound("stop");
 
     await renderPartyAndStorage();
@@ -2711,6 +2847,7 @@ function openOnlineBattleView() {
     document.getElementById("resultCard")?.classList.add("hidden");
     $("#viewSettings")?.classList.add("hidden");
     $("#viewParty")?.classList.add("hidden");
+    $("#viewStore")?.classList.add("hidden");
     // ^ adjust to whatever main views you actually use
 
     // Show Online Battle view
@@ -2802,6 +2939,388 @@ async function migrateOldStorage() {
     toast("Storage migration complete.");
     console.log("[migrateOldStorage] Migration complete.");
 }
+/* 
+    =====================================
+        Get the items and pokemon data
+    =====================================
+*/
+async function loadPokemonData() {
+    // 1️⃣ In-memory cache
+    if (POKEMON_DATA) return POKEMON_DATA;
+
+    // 2️⃣ Try browser.storage.local
+    try {
+        if (browser?.storage?.local) {
+            const stored = await browser.storage.local.get([
+                "pokemonData",
+                "pokemonDataVersion"
+            ]);
+
+            if (
+                stored &&
+                stored.pokemonData &&
+                stored.pokemonDataVersion === POKEMON_DATA_VERSION
+            ) {
+                console.log("[PokemonData] Loaded from storage cache");
+                POKEMON_DATA = stored.pokemonData;
+                return POKEMON_DATA;
+            }
+        }
+    } catch (e) {
+        console.warn("[PokemonData] Failed to read from storage:", e);
+    }
+
+    // 3️⃣ Fetch from file inside the extension
+    try {
+        const url = browser.runtime.getURL("data/pokemonData.json");
+        const res = await fetch(url);
+
+        if (!res.ok) {
+            throw new Error("Failed to load pokemonData.json: " + res.status);
+        }
+
+        const json = await res.json();
+        POKEMON_DATA = json;
+
+        // Save to storage for next time
+        try {
+            if (browser?.storage?.local) {
+                await browser.storage.local.set({
+                    pokemonData: json,
+                    pokemonDataVersion: POKEMON_DATA_VERSION
+                });
+                console.log("[PokemonData] Cached to storage");
+            }
+        } catch (e) {
+            console.warn("[PokemonData] Failed to write cache:", e);
+        }
+
+        return POKEMON_DATA;
+    } catch (e) {
+        console.error("[PokemonData] Failed to load from file:", e);
+        POKEMON_DATA = null;
+        return null;
+    }
+}
+async function getPokemonByDex(name) {
+    const data = await loadPokemonData();
+    if (!data) return null;
+
+    // depends on your structure — examples:
+
+    // 1) If it's a plain array: [{id: 1, name: "Bulbasaur"}, ...]
+    // return data.find(p => p.id === num) || null;
+
+    // 2) If it's an object keyed by id: { "1": {...}, "2": {...}, ... }
+    return data[name] || data[String(name)] || null;
+}
+async function loadItemsAndMachines() {
+    // 1️⃣ Memory cache first
+    if (ITEMS_DATA) return ITEMS_DATA;
+
+    // 2️⃣ Try browser.storage.local
+    try {
+        if (browser?.storage?.local) {
+            const stored = await browser.storage.local.get([
+                "itemsData",
+                "itemsDataVersion"
+            ]);
+
+            if (
+                stored &&
+                stored.itemsData &&
+                stored.itemsDataVersion === ITEMS_DATA_VERSION
+            ) {
+                console.log("[Items] Loaded from storage cache");
+                ITEMS_DATA = stored.itemsData;
+                return ITEMS_DATA;
+            }
+        }
+    } catch (err) {
+        console.warn("[Items] Failed to read from storage:", err);
+    }
+
+    // 3️⃣ Fetch fresh file from inside extension
+    try {
+        const url = browser.runtime.getURL("data/items_and_machines.json");
+        const res = await fetch(url);
+
+        if (!res.ok) {
+            throw new Error(
+                "Failed to load items_and_machines.json: " + res.status
+            );
+        }
+
+        const json = await res.json();
+        ITEMS_DATA = json;
+
+        // Cache in browser.storage.local
+        try {
+            if (browser?.storage?.local) {
+                await browser.storage.local.set({
+                    itemsData: json,
+                    itemsDataVersion: ITEMS_DATA_VERSION
+                });
+                console.log("[Items] Cached to storage");
+            }
+        } catch (err) {
+            console.warn("[Items] Failed to write cache:", err);
+        }
+
+        return ITEMS_DATA;
+    } catch (err) {
+        console.error("[Items] Load failed:", err);
+        ITEMS_DATA = null;
+        return null;
+    }
+}
+async function getItemMachines(name) {
+    const data = await loadItemsAndMachines();
+    if (!data) return null;
+
+    // normalize
+    const key = String(name).toLowerCase();
+
+    // check in items
+    if (data.items && data.items[key]) {
+        return data.items[key];
+    }
+
+    // check in machines
+    if (data.machines && data.machines[key]) {
+        return data.machines[key];
+    }
+
+    // nothing found
+    return null;
+}
+
+/* 
+    ========================
+        Open Store
+    ========================
+*/
+function searchItems(query, items) {
+    if (!query) return items;
+    const q = query.trim().toLowerCase();
+    return items.filter(it => it.name && it.name.toLowerCase().includes(q));
+}
+
+function filterStoreByCategory(category, items) {
+    if (!category) return items;
+    const cat = category.toLowerCase();
+
+    return items.filter(it => {
+        const itemCat = (it.category || "").toLowerCase();
+        if (!itemCat) return false;
+
+        if (cat === "balls") {
+            return itemCat.includes("ball");
+        }
+        return itemCat === cat;
+    });
+}
+
+async function openStore() {
+    hideAllViews();
+
+    const view = document.getElementById("viewStore");
+    if (!view) {
+        console.error("#viewStore not found in DOM");
+        return;
+    }
+    view.classList.remove("hidden");
+
+    const data = await loadItemsAndMachines();
+    if (!data || !data.items) {
+        const storeItemsErr = document.getElementById("storeItems");
+        if (storeItemsErr) {
+            storeItemsErr.innerHTML =
+                `<div class="text-danger">Failed to load items.</div>`;
+        }
+        return;
+    }
+
+    // Only items that actually cost something
+    let baseItems = Object.values(data.items).filter(it =>
+        typeof it.cost === "number" && it.cost > 0
+    );
+
+    const searchInput = document.getElementById("storeSearch");
+    const categorySelect = document.getElementById("storeCategory");
+    const storeItems = document.getElementById("storeItems");
+
+    if (!storeItems) {
+        console.error("#storeItems not found");
+        return;
+    }
+
+    // Ensure 4-column grid on md+
+    storeItems.classList.add("row", "row-cols-2", "row-cols-md-4", "g-2");
+
+    function renderStore() {
+        let filtered = searchItems(searchInput?.value || "", baseItems);
+        filtered = filterStoreByCategory(categorySelect?.value || "", filtered);
+
+        storeItems.innerHTML = "";
+
+        if (filtered.length === 0) {
+            storeItems.innerHTML = `<div class="text-muted">No items found.</div>`;
+            return;
+        }
+
+        for (const item of filtered) {
+            // Column wrapper
+            const col = document.createElement("div");
+            col.className = "col mb-2";
+            col.style.width = "130px";
+            const card = document.createElement("div");
+            card.className =
+                "card p-2 bg-dark text-white border-secondary h-100 d-flex flex-column align-items-center text-center";
+
+            card.innerHTML = `
+                <img src="${item.sprites?.default || ""}"
+                    style="width:48px;height:48px;image-rendering:pixelated;"
+                    class="mb-2">
+
+                <div class="store-name">${item.name.replace(/-/g, " ")}</div>
+                <div class="store-cost text-muted">Cost: ${item.cost}</div>
+
+                <div class="store-controls mt-2">
+                    <input type="number"
+                        class="store-qty-input form-control form-control-sm"
+                        data-item="${item.name}"
+                        min="1"
+                        value="1">
+
+                    <button class="buy-btn btn btn-success btn-sm mt-1 w-100"
+                            data-item="${item.name}">
+                        Buy
+                    </button>
+                </div>
+            `;
+
+
+
+            col.appendChild(card);
+            storeItems.appendChild(col);
+        }
+    }
+
+    // Bind search + filter once
+    if (searchInput && !searchInput._storeBound) {
+        searchInput.addEventListener("input", renderStore);
+        searchInput._storeBound = true;
+    }
+
+    if (categorySelect && !categorySelect._storeBound) {
+        categorySelect.addEventListener("change", renderStore);
+        categorySelect._storeBound = true;
+    }
+    // First render
+    renderStore();
+}
+
+
+// Get a value from playerStats array
+async function getPlayerStat(key, defaultValue) {
+    const stored = await browser.storage.local.get("playerStats");
+    let stats = stored.playerStats || [];
+
+    const found = stats.find(x => x[0] === key);
+    return found ? found[1] : defaultValue;
+}
+// Set/update a value in playerStats array
+async function setPlayerStat(key, value) {
+    const stored = await browser.storage.local.get("playerStats");
+    let stats = stored.playerStats || [];
+
+    const idx = stats.findIndex(x => x[0] === key);
+    if (idx >= 0) stats[idx][1] = value;
+    else stats.push([key, value]);
+
+    await browser.storage.local.set({ playerStats: stats });
+    return true;
+}
+
+async function buyItem(itemName) {
+    if (!itemName) return console.error("Undefined itemName");
+
+    const data = await loadItemsAndMachines();
+    if (!data?.items) return console.error("Items not loaded");
+
+    const item = data.items[itemName];
+    if (!item) return console.warn("Item not found:", itemName);
+    if (!item.cost || item.cost <= 0) return; // skip free items
+
+    const qtyInput = document.querySelector(
+        `.store-qty-input[data-item="${CSS.escape(itemName)}"]`
+    );
+    const qty = Math.max(1, Number(qtyInput?.value || 1));
+    const totalCost = item.cost * qty;
+
+    // coins
+    const coins = await getNum(STORE.coins, 0);
+    if (coins < totalCost) {
+        playSound?.("lose");
+        toast("Not enough coins!");
+        return;
+    }
+
+    // deduct
+    await setNum(STORE.coins, coins - totalCost);
+
+    // add to inventory
+    const inv = await getInventory();
+    inv[itemName] = (inv[itemName] || 0) + qty;
+    await saveInventory(inv);
+
+    syncUserDataToBackend();
+    playSound?.("victory");
+    toast(`You bought ${qty} × ${item.name.replace(/-/g, " ")}!`);
+}
+
+
+function hideAllViews() {
+    const viewIds = [
+        "viewLoginRegister",
+        "viewRegister",
+        "viewOnlineBattle",
+        "resultCard",
+        "viewStore",
+        "viewDex",
+        "viewPicker",
+        "viewBattle",
+        "viewSettings",
+        "viewParty"
+        // add more view IDs here if you have them
+    ];
+
+    for (const id of viewIds) {
+        const el = document.getElementById(id);
+        if (el) el.classList.add("hidden");
+    }
+}
+
+// BIND ONCE — globally
+if (!window._storeBuyBound) {
+    document.addEventListener("click", (e) => {
+        const btn = e.target.closest(".buy-btn");
+        if (!btn) return;
+
+        const itemName = btn.dataset.item;
+        if (!itemName) {
+            console.error("Buy button missing data-item");
+            return;
+        }
+
+        buyItem(itemName);
+    });
+
+
+    window._storeBuyBound = true;
+}
+
 // Show a small toast (use alert if you prefer)
 // Simple toast API:
 // toast("Saved!");
@@ -2869,9 +3388,76 @@ async function migrateOldStorage() {
         root.classList.add(pos);
     };
 })();
+async function migrateOldBallSystemToInventory() {
+    const stored = await browser.storage.local.get([
+        "playerStats",
+        "balls",
+        "greatBalls",
+        "ultraBalls",
+        "masterBalls",
+        "potions"
+    ]);
+
+    console.log("[Migration] Stored data:", stored);
+
+    // Ensure playerStats exists and is an object
+    let stats = stored.playerStats;
+    if (!stats || typeof stats !== "object" || Array.isArray(stats)) {
+        console.warn("[Migration] playerStats was invalid, fixing...");
+        stats = {}; // rebuild clean object
+    }
+
+    // Ensure inventory exists
+    if (!stats.inventory || typeof stats.inventory !== "object") {
+        stats.inventory = {};
+    }
+
+    let migratedAnything = false;
+
+    // Helper to write safely
+    const safeAdd = (itemKey, oldAmount) => {
+        if (!oldAmount || oldAmount <= 0) return;
+
+        // Do not overwrite existing inventory values
+        const prev = stats.inventory[itemKey] || 0;
+        stats.inventory[itemKey] = prev + oldAmount;
+        migratedAnything = true;
+    };
+
+    // ---- Migrate balls safely ----
+    safeAdd("poke-ball",   stored.balls       | 0);
+    safeAdd("great-ball",  stored.greatBalls  | 0);
+    safeAdd("ultra-ball",  stored.ultraBalls  | 0);
+    safeAdd("master-ball", stored.masterBalls | 0);
+
+    // ---- Migrate potions ----
+    safeAdd("potion", stored.potions | 0);
+
+    if (!migratedAnything) {
+        console.log("[Migration] No old data found — skipping.");
+        return;
+    }
+
+    // Save updated inventory
+    await browser.storage.local.set({ playerStats: stats });
+    console.log("[Migration] Inventory updated:", stats.inventory);
+
+    // After safe migration — remove old fields
+    await browser.storage.local.remove([
+        "balls",
+        "greatBalls",
+        "ultraBalls",
+        "masterBalls",
+        "potions"
+    ]);
+
+    console.log("[Migration] Old fields cleaned up.");
+}
+
+
 /* 
 *   =========================
-    MAIN INIT
+        MAIN INIT
     ========================= 
 */
 async function init() {
@@ -2926,9 +3512,10 @@ async function init() {
     addHeaderButton("primary", {
         id: "btnShop",
         text: "🛒 Shop",
-        title: "Shop (coming soon)",
-        onClick: () => toast("Shop is coming soon!"),
+        title: "Buy items",
+        onClick: openStore
     });
+
     // Fill secondary menu (Pokédex, Reset)
     addHeaderButton("secondary", {
         id: "btnPokedex",
@@ -3138,6 +3725,8 @@ async function init() {
     updatePokeStopStatus();
     initCoinDisplay();
     initSettings();
+    
+
     if (!window.__pokestopTimer) {
         window.__pokestopTimer = setInterval(updatePokeStopStatus, 1000);
     }
@@ -3146,3 +3735,5 @@ init().catch(err => {
     console.error(err);
     $("#status").textContent = "Failed to load starters.json";
 });
+console.log(pokeData["bulbasaur"]);
+console.log(ItemsAndMachines["items"]["premier-ball"]);

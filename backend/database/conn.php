@@ -17,9 +17,9 @@ class Database {
     /** @var string Database host */
     private string $host     = 'localhost';
     /** @var string Database username */
-    private string $username = 'esrobbie';
+    private string $username = '';
     /** @var string Database password */
-    private string $password = 'pCo9vAF5bm1P(F@1';
+    private string $password = '';
     /** @var string Database name */
     private string $dbname   = 'pokeapi';
     /** @var int Database port */

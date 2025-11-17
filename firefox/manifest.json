@@ -63,6 +63,7 @@
         "starters.json",
         "css/*",
         "js/*",
+        "data/*",
         "content/*",
         "icons/*"
       ],
