@@ -59,6 +59,9 @@ const SOUNDS = {
     battleSound: new Audio(
         "https://github.com/jellowrld/pokemon-tampermonkey/raw/refs/heads/main/wildbattle.mp3"
     ),
+    MainOnlineBattle: new Audio(
+        "https://github.com/D-Stokes-NC-Gaming-Studio/pokemon-tampermonkey/raw/refs/heads/main/sounds/05%20Battle%20Dome%201.mp3"
+    ),
 };
 
 let selectedBall = "poke"; // default
@@ -596,6 +599,7 @@ function chipForType(nm) {
    VIEW SWITCHING
    ========================= */
 function showPicker() {
+    runAway();
     $("#viewPicker")?.classList.remove("hidden");
     $("#resultCard")?.classList.toggle("hidden", !window.__hasResult);
     $("#viewDex")?.classList.add("hidden");
@@ -604,22 +608,29 @@ function showPicker() {
     $("#viewSettings")?.classList.add("hidden");
     $("#viewOnlineBattle")?.classList.add("hidden");
     if (wild) endBattle();
+    playSound("stop", false);
 }
 function showDex() {
+    runAway();
     $("#viewPicker")?.classList.add("hidden");
     $("#resultCard")?.classList.add("hidden");
     $("#viewDex")?.classList.remove("hidden");
     $("#viewSettings")?.classList.add("hidden");
     $("#viewParty")?.classList.add("hidden");
     $("#viewBattle")?.classList.add("hidden");
+    $("#viewOnlineBattle")?.classList.add("hidden");
+    playSound("stop", false);
 }
 function showBattle() {
+    runAway();
     $("#viewPicker")?.classList.add("hidden");
     $("#resultCard")?.classList.add("hidden");
     $("#viewDex")?.classList.add("hidden");
     $("#viewBattle")?.classList.remove("hidden");
     $("#viewParty")?.classList.add("hidden");
     $("#viewSettings")?.classList.add("hidden");
+    $("#viewOnlineBattle")?.classList.add("hidden");
+    playSound("stop");
     if (!wild) endBattle(); else renderBattle();
 }
 /* =========================
@@ -698,16 +709,35 @@ function renderThreeBalls(pool) {
 function showResult(p) {
     window.__hasResult = true;
     $("#resultCard")?.classList.remove("hidden");
-
+    console.log(p);
     const spriteBox = $("#resultSprite");
     if (spriteBox) {
         spriteBox.innerHTML = "";
+
         const img = new Image();
-        img.src = p.base_image || p.shiny_image || "";
         img.alt = p.name || "pokemon";
-        img.style.width = "84px";
+        img.style.width = "64px";
         img.style.height = "auto";
         img.style.imageRendering = "pixelated";
+
+        // Primary source: PokeAPI home sprite (if we have a dex number)
+        if (p.pokeDex_num) {
+            img.src = `https://github.com/PokeAPI/sprites/blob/master/sprites/pokemon/other/home/${p.pokeDex_num}.png?raw=true`;
+        } else if (p.base_image || p.shiny_image) {
+            // No dex number, use base/shiny directly
+            img.src = p.base_image || p.shiny_image;
+        } else {
+            img.src = ""; // or some default placeholder
+        }
+
+        // Fallback if PokeAPI sprite fails to load
+        img.onerror = () => {
+            if (p.base_image || p.shiny_image) {
+                img.onerror = null; // prevent infinite loop
+                img.src = p.base_image || p.shiny_image;
+            }
+        };
+
         spriteBox.appendChild(img);
     }
 
@@ -944,12 +974,15 @@ function wireDexSearch(maxDex = 1025) {
     };
 }
 async function openDex() {
+    runAway();
     document.querySelector("#viewPicker")?.classList.add("hidden");
     document.querySelector("#resultCard")?.classList.add("hidden");
     document.querySelector("#viewBattle")?.classList.add("hidden");
     document.querySelector("#viewParty")?.classList.add("hidden");
     document.querySelector("#viewDex")?.classList.remove("hidden");
     document.querySelector("#viewSettings")?.classList.add("hidden");
+    $("#viewOnlineBattle")?.classList.add("hidden");
+    playSound("stop");
 
     const allCaught = await getCaught();
     renderDexFull(allCaught);
@@ -1341,12 +1374,44 @@ function hpBar(current, max) {
     wrap.appendChild(fill);
     return wrap;
 }
+// All legendary + mythical IDs
+const LEGENDARY_IDS = [
+  144,145,146,150,
+  243,244,245,249,250,
+  377,378,379,380,381,382,383,384,
+  480,481,482,483,484,485,486,487,488,
+  638,639,640,641,642,643,644,645,646,
+  716,717,718,
+  772,773,785,786,787,788,789,790,791,792,800,
+  888,889,890,891,892,894,895,896,897,898,
+  1001,1002,1003,1004,
+  1007,1008,1009,1010,1024
+];
+
+const MYTHICAL_IDS = [
+  151,
+  251,
+  385,386,
+  489,490,491,492,493,
+  494,647,648,649,
+  719,720,721,
+  801,802,807,808,809,
+  893
+];
+
+// Sets for fast lookup
+const LEGENDARY_SET = new Set(LEGENDARY_IDS);
+const MYTHICAL_SET  = new Set(MYTHICAL_IDS);
+
 function getRarityByDex(num) {
-    if ([144, 145, 146, 150, 151].includes(num)) return "legendary";
+    if (MYTHICAL_SET.has(num))  return "mythical";   // or "legendary" if you want them merged
+    if (LEGENDARY_SET.has(num)) return "legendary";
+
     if (num % 25 === 0) return "rare";
-    if (num % 7 === 0) return "uncommon";
+    if (num % 7 === 0)  return "uncommon";
     return "common";
 }
+
 function endBattle(message) {
     wild = null;
     wMaxHP = 0; wHP = 0; pHP = 0; wildSleepTurns = 0;
@@ -1495,8 +1560,8 @@ async function startBattle(opts = {}) {
         showdownName = SPRITE_NAME_FIXES[showdownName] || showdownName;
 
         const sprite = isShiny
-            ? `https://play.pokemonshowdown.com/sprites/ani-shiny/${showdownName}.gif`
-            : `https://play.pokemonshowdown.com/sprites/ani/${showdownName}.gif`;
+            ? `hhttps://raw.githubusercontent.com/PokeAPI/sprites/refs/heads/master/sprites/pokemon/other/showdown/shiny/${id}.gif`
+            : `https://raw.githubusercontent.com/PokeAPI/sprites/refs/heads/master/sprites/pokemon/other/showdown/${id}.gif`;
 
         const wildLevel = pickWildLevel(player.level);
         const wildBase = mapBaseStatsFromPokeAPI(d);
@@ -2046,12 +2111,15 @@ function applyCompactLayout() {
     document.body.classList.toggle('compact', compact);
 }
 function openSettings() {
+    runAway();
     $('#resultCard')?.classList.add("hidden");
     $("#viewBattle")?.classList.add("hidden");
     $("#viewDex")?.classList.add("hidden");
     $("#viewPicker")?.classList.add("hidden");
     $("#viewParty")?.classList.add("hidden");
     $("#viewSettings")?.classList.remove("hidden");
+    $("#viewOnlineBattle")?.classList.add("hidden");
+    playSound("stop");
 
 }
 async function initSettings() {
@@ -2105,26 +2173,96 @@ async function initSettings() {
         }
     });
 }
-async function playSound(key) {
+// Keep references to looped sounds so we can stop them
+const ACTIVE_SOUNDS = {};
+const ACTIVE_LOOPING_SOUNDS = {};
+async function playSound(key, loop = false) {
     const audio = SOUNDS[key];
-    if (!audio) {
-        console.warn("[Audio] No sound for key: ", key);
+    if (key === "stop") {
+        stopAllSounds();
         return;
     }
-    /*
-    *  *   load Sound from settings if audio is enabled
-    */
-    if (!await getBool("soundEnabled", true)) return;
-    const clone = audio.cloneNode();
-    const volume = await getVolume();
 
-    clone.volume = Math.min(1, Math.max(0, volume));
+    if (!audio) {
+        console.warn("[Audio] No sound for key:", key);
+        return;
+    }
+
+    if (!await getBool("soundEnabled", true)) return;
+
+    const volume = await getVolume();
+    const finalVolume = Math.min(1, Math.max(0, volume));
+
+    // 🔁 LOOPING SOUND
+    if (loop) {
+        // If already looping, just resume
+        if (ACTIVE_LOOPING_SOUNDS[key]) {
+            let a = ACTIVE_LOOPING_SOUNDS[key];
+            a.volume = finalVolume;
+            if (a.paused) a.play().catch(err => console.warn(err));
+            return a;
+        }
+
+        // Create new instance
+        const instance = audio.cloneNode();
+        instance.volume = finalVolume;
+        instance.loop = true;
+
+        try {
+            await instance.play();
+        } catch (e) {
+            console.warn("[Audio Loop] play error:", e);
+        }
+
+        ACTIVE_LOOPING_SOUNDS[key] = instance;
+        return instance;
+    }
+
+    // 🎵 ONE-SHOT SOUND
+    const instance = audio.cloneNode();
+    instance.volume = finalVolume;
+    instance.loop = false;
+
     try {
-        clone.currentTime = 0;
-        await clone.play();
+        await instance.play();
     } catch (e) {
         console.warn("[Audio] play error:", e);
+        return;
     }
+
+    // Track it until it ends
+    ACTIVE_SOUNDS[key] = instance;
+    instance.onended = () => delete ACTIVE_SOUNDS[key];
+
+    return instance;
+}
+function stopSound(key) {
+    // Stop looping
+    if (ACTIVE_LOOPING_SOUNDS[key]) {
+        const a = ACTIVE_LOOPING_SOUNDS[key];
+        try {
+            a.pause();
+            a.currentTime = 0;
+        } catch { }
+        delete ACTIVE_LOOPING_SOUNDS[key];
+    }
+
+    // Stop any active one-shot
+    if (ACTIVE_SOUNDS[key]) {
+        const a = ACTIVE_SOUNDS[key];
+        try {
+            a.pause();
+            a.currentTime = 0;
+        } catch { }
+        delete ACTIVE_SOUNDS[key];
+    }
+}
+function stopAllSounds() {
+    // Stop all looped audio
+    for (const k in ACTIVE_LOOPING_SOUNDS) stopSound(k);
+
+    // Stop all one-shots
+    for (const k in ACTIVE_SOUNDS) stopSound(k);
 }
 /* =========================
     PARTY & STORAGE BOXES
@@ -2386,12 +2524,15 @@ async function renderPartyAndStorage() {
 }
 async function openPartyView() {
     // View switching
+    runAway();
     document.getElementById("viewPicker")?.classList.add("hidden");
     document.getElementById("resultCard")?.classList.add("hidden");
     document.getElementById("viewBattle")?.classList.add("hidden");
     document.getElementById("viewDex")?.classList.add("hidden");
     document.getElementById("viewSettings")?.classList?.add("hidden");
     document.getElementById("viewParty")?.classList.remove("hidden");
+    $("#viewOnlineBattle")?.classList.add("hidden");
+    playSound("stop");
 
     await renderPartyAndStorage();
 }
@@ -2560,6 +2701,7 @@ async function collectPlayerState(username = "guest") {
     ========================= 
 */
 function openOnlineBattleView() {
+    runAway();
     // Hide other main views
     document.getElementById("viewLoginRegister")?.classList.add("hidden");
     document.getElementById("viewRegister")?.classList.add("hidden");
@@ -2567,6 +2709,8 @@ function openOnlineBattleView() {
     document.getElementById("viewBattle")?.classList.add("hidden");
     document.getElementById("viewPicker")?.classList.add("hidden");
     document.getElementById("resultCard")?.classList.add("hidden");
+    $("#viewSettings")?.classList.add("hidden");
+    $("#viewParty")?.classList.add("hidden");
     // ^ adjust to whatever main views you actually use
 
     // Show Online Battle view
@@ -2574,8 +2718,9 @@ function openOnlineBattleView() {
     if (battleView) {
         battleView.classList.remove("hidden");
     }
-}
 
+    playSound("MainOnlineBattle", true);
+}
 /* =========================
     Save Data to Backend
     ========================= 
