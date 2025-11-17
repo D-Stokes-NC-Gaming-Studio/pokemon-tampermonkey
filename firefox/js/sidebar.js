@@ -3,7 +3,7 @@ const $ = (s, r = document) => r.querySelector(s);
 /* =========================
    CONFIG
    ========================= */
-   // Need to add user input for username //
+// Need to add user input for username //
 const API_BASE = "https://dstokesncstudio.com/pokeapi/pokeapi.php";
 const GET_POKEMON = (name) => `${API_BASE}?action=getPokemon&name=${encodeURIComponent(String(name).toLowerCase())}`;
 const dev = false;
@@ -156,11 +156,266 @@ async function updateBallSelect() {
     Register User
 
 */
-async function getUserandRegister(){
-     
+function initPasswordToggle() {
+    const toggleBtn = document.getElementById("togglePassword");
+    const pwdInput = document.getElementById("password");
+    const icon = document.getElementById("togglePasswordIcon");
 
-    return null
+    if (!toggleBtn || !pwdInput || !icon) return;
+
+    toggleBtn.addEventListener("click", () => {
+        const isPwd = pwdInput.type === "password";
+        pwdInput.type = isPwd ? "text" : "password";
+        icon.classList.toggle("bi-eye-slash", !isPwd);
+        icon.classList.toggle("bi-eye", isPwd);
+    });
 }
+
+async function initLoginRegisterSystem() {
+    return new Promise(async (resolve) => {
+        // Sections
+        const loginSection = document.getElementById("viewLoginRegister");
+        const registerSection = document.getElementById("viewRegister");
+
+        // Divs
+        const loginDiv = document.getElementById("loginDiv");
+        const registerDiv = document.getElementById("registerDiv");
+
+        // Status
+        const statusLogin = document.getElementById("statusLogin");
+        const statusRegister = document.getElementById("statusRegister");
+
+        // Inputs (login)
+        const usernameInput = document.getElementById("username");
+        const passwordInput = document.getElementById("password");
+        const rememberMe = document.getElementById("rememberMe");
+        const loginBtn = document.getElementById("loginBtn");
+
+        // Inputs (register)
+        const regUsername = document.getElementById("reg_username");
+        const regPassword = document.getElementById("reg_password");
+        const regPassword2 = document.getElementById("reg_password_confirm");
+        const registerBtn = document.getElementById("registerBtn");
+
+        // Links
+        const registerMe = document.getElementById("registerMe");
+        const goToLoginLink = document.getElementById("goToLoginLink");
+
+        //-----------------------------------------------------------
+        // HELPERS
+        //-----------------------------------------------------------
+        function showStatus(el, message, type = "info") {
+            el.textContent = message;
+            el.className = `small d-flex mb-3 text-${type} align-items-center justify-content-center`;
+        }
+        // STEP A — Attempt auto-login from saved storage
+        async function tryAutoLogin() {
+            let stored = null;
+
+            // Extension storage
+            try {
+                if (browser?.storage?.local) {
+                    const s = await browser.storage.local.get("username");
+                    if (s.username) stored = s.username;
+                }
+            } catch { }
+
+            // Browser storage fallbacks
+            stored = stored || localStorage.getItem("username") || sessionStorage.getItem("username");
+
+            if (!stored) return null;
+
+            // Try auto-login with backend
+            const res = await fetch("https://dstokesncstudio.com/pokeBackend/api/getUser.php", {
+                method: "GET",
+                headers: { "X-Session-User": stored }
+            });
+
+            const json = await res.json();
+            console.log("AUTO LOGIN getUser result:", json);
+
+            if (json.success === true && json.data) {
+                console.log("Auto-login success:", stored);
+                return stored;
+            }
+
+            return null;
+        }
+
+        async function saveUser(username) {
+            try {
+                if (browser?.storage?.local)
+                    await browser.storage.local.set({ username });
+            } catch { }
+            localStorage.setItem("username", username);
+            sessionStorage.setItem("username", username);
+        }
+
+        function showLogin() {
+            registerSection.classList.add("hidden");
+            loginSection.classList.remove("hidden");
+            loginDiv.classList.remove("hidden");
+        }
+
+        function showRegister() {
+            loginSection.classList.add("hidden");
+            registerSection.classList.remove("hidden");
+            registerDiv.classList.remove("hidden");
+        }
+
+        async function loadStoredUsername() {
+            let stored = null;
+
+            try {
+                if (browser?.storage?.local) {
+                    const r = await browser.storage.local.get("username");
+                    if (r.username) stored = r.username;
+                }
+            } catch { }
+
+            stored =
+                stored ||
+                localStorage.getItem("username") ||
+                sessionStorage.getItem("username");
+
+            if (stored)
+                sessionStorage.setItem("username", stored);
+
+            return stored;
+        }
+
+        //-----------------------------------------------------------
+        // BACKEND FLOW: check user → or register new
+        //-----------------------------------------------------------
+        async function checkOrRegister(username, statusEl) {
+            username = (username || "").trim();
+
+            if (username.length < 3) {
+                showStatus(statusEl, "Username must be at least 3 characters.", "danger");
+                return null;
+            }
+
+            showStatus(statusEl, "Checking username…", "info");
+
+            try {
+                const resCheck = await fetch(
+                    "https://dstokesncstudio.com/pokeBackend/api/getUser.php",
+                    {
+                        method: "GET",
+                        headers: {
+                            "X-Session-User": username
+                        }
+                    }
+                );
+
+                const jsonCheck = await resCheck.json(); // read body ONCE
+                console.log("getUser.php returned:", jsonCheck); // ✔️ log stored data
+
+                if (jsonCheck.success || jsonCheck.status === "success") {
+                    await saveUser(username);
+                    showStatus(statusEl, `Welcome back, ${username}!`, "success");
+                    return username;
+                }
+
+                // Register fresh
+                showStatus(statusEl, "Registering user…", "info");
+
+                const resReg = await fetch(
+                    "https://dstokesncstudio.com/pokeBackend/api/registerUser.php",
+                    {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ username }),
+                    }
+                );
+
+                const jsonReg = await resReg.json();
+
+                if (jsonReg.success || jsonReg.status === "success") {
+                    await saveUser(username);
+                    showStatus(statusEl, `Account created!`, "success");
+                    return username;
+                }
+
+                if (jsonReg.message?.includes("taken")) {
+                    showStatus(statusEl, "Username already taken.", "danger");
+                    return null;
+                }
+
+                showStatus(statusEl, jsonReg.message || "Unknown error.", "warning");
+                return null;
+            } catch (e) {
+                console.error(e);
+                showStatus(statusEl, "Server unreachable.", "danger");
+                return null;
+            }
+        }
+
+        //-----------------------------------------------------------
+        // EVENTS
+        //-----------------------------------------------------------
+        registerMe.addEventListener("click", (e) => {
+            e.preventDefault();
+            showRegister();
+            showStatus(statusRegister, "Create your account", "info");
+        });
+
+        goToLoginLink.addEventListener("click", (e) => {
+            e.preventDefault();
+            showLogin();
+            showStatus(statusLogin, "Welcome back!", "info");
+        });
+
+        loginBtn.addEventListener("click", async () => {
+            const username = usernameInput.value;
+            const finalUser = await checkOrRegister(username, statusLogin);
+
+            if (!finalUser) return;
+
+            if (rememberMe.checked)
+                await saveUser(finalUser);
+
+            resolve(finalUser); // <-- IMPORTANT
+        });
+
+        registerBtn.addEventListener("click", async () => {
+            if (regPassword.value !== regPassword2.value) {
+                showStatus(statusRegister, "Passwords do not match.", "danger");
+                return;
+            }
+
+            const username = regUsername.value;
+            const finalUser = await checkOrRegister(username, statusRegister);
+
+            if (!finalUser) return;
+
+            usernameInput.value = finalUser;
+            showLogin();
+            showStatus(statusLogin, "Account created! Please log in.", "success");
+        });
+
+        //-----------------------------------------------------------
+        // AUTO LOAD IF USER EXISTS
+        //-----------------------------------------------------------
+        const autoUser = await tryAutoLogin();
+        if (autoUser) {
+            resolve(autoUser);
+            return;
+        }
+        const stored = await loadStoredUsername();
+
+        if (stored) {
+            usernameInput.value = stored;
+            showLogin();
+            showStatus(statusLogin, `Welcome back, ${stored}!`, "success");
+            
+        } else {
+            showRegister();
+            showStatus(statusRegister, "Create your account", "info");
+        }
+    });
+}
+
 
 async function promptUsernameAndRegister() {
     // ✅ Try persistent sources first
@@ -193,14 +448,14 @@ async function promptUsernameAndRegister() {
         });
         const userJson = await getUserName.json;
 
-        if(userJson.success || userJson.status === "success"){
+        if (userJson.success || userJson.status === "success") {
             console.log("✅ Registered:", userJson.username || username);
             // Save persistently
             await browser.storage.local.set({ username });
             localStorage.setItem("username", username);
             sessionStorage.setItem("username", username);
             return username;
-        }else{
+        } else {
             const res = await fetch("https://dstokesncstudio.com/pokeBackend/api/registerUser.php", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
@@ -1046,9 +1301,6 @@ async function getPlayerMon() {
     }
     return null;
 }
-
-
-
 async function setPlayerMon(mon) {
     // Update party reference
     const { party } = await browser.storage.local.get("party");
@@ -1066,8 +1318,6 @@ async function setPlayerMon(mon) {
     }
     await syncUserDataToBackend();
 }
-
-
 /* =========================
    ENCOUNTER STATE
    ========================= */
@@ -1308,7 +1558,6 @@ function spriteWithHP({ label, imgSrc, cur, max, flip = false, extraClass = "" }
 
     return col;
 }
-
 async function renderBattle(msg) {
     const panel = $("#battlePanel"); if (!panel) return;
     panel.innerHTML = "";
@@ -1468,7 +1717,6 @@ async function playerAttack() {
     renderBattle(`You dealt ${dmg}!`);
     setTimeout(wildAttack, 500);
 }
-
 async function wildAttack() {
     if (wildSleepTurns > 0) {
         wildSleepTurns--;
@@ -1541,7 +1789,6 @@ async function grantExpForWin(wildMon) {
 
     return { gain, leveled, level: mon.level };
 }
-
 async function usePotion() {
     // Load party and caught list
     const { party } = await browser.storage.local.get("party");
@@ -1580,7 +1827,6 @@ async function usePotion() {
     renderBattle(`You used a potion and healed ${heal} HP.`);
     setTimeout(wildAttack, 500);
 }
-
 async function throwBall() {
     const ball = BALLS[selectedBall] || BALLS.poke;
 
@@ -1631,7 +1877,6 @@ async function throwBall() {
     renderBattle(`${ball.label} failed! (${Math.round(chance * 100)}% chance)`);
     setTimeout(wildAttack, 500);
 }
-
 function runAway() {
     browser.storage.local.set({ lastEncounter: null });
 
@@ -1647,7 +1892,6 @@ function fmtTime(ms) {
     const s = Math.floor((ms % 60000) / 1000);
     return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 }
-
 async function updatePokeStopStatus() {
     const statusEl = $("#btnPokeStop");
     const pokeEl = $("#pokeStopPanel");
@@ -1796,7 +2040,6 @@ async function rollAndRender() {
         $("#status").textContent = "Failed to load starters.";
     }
 }
-
 function applyCompactLayout() {
     const compact = document.documentElement.clientWidth <= 360;
     document.body.classList.toggle('compact', compact);
@@ -1931,7 +2174,6 @@ async function loadPartyAndBoxes() {
     return { party: safeParty, boxes };
 }
 
-
 function compactParty(party) {
     return party.filter(Boolean).slice(0, 6);
 }
@@ -1954,7 +2196,6 @@ async function saveBoxes(boxes) {
 function firstEmptySlot(slots) {
     return Array.isArray(slots) ? slots.findIndex(s => s === null) : -1;
 }
-
 function makeMonCard(mon) {
     const card = document.createElement("div");
     card.className = "mon-card";
@@ -2142,7 +2383,6 @@ async function renderPartyAndStorage() {
         storageGrid.appendChild(slot);
     }
 }
-
 async function openPartyView() {
     // View switching
     document.getElementById("viewPicker")?.classList.add("hidden");
@@ -2216,10 +2456,6 @@ async function placeNewCatchIntoPartyOrStorage(caughtUID) {
         await syncUserDataToBackend(username);
     }
 }
-
-
-
-
 /* =========================
     CATCH HANDLER
     ========================= 
@@ -2335,7 +2571,6 @@ async function savePlayerToDB(username = "guest") {
         return { status: "error", message: err.message };
     }
 }
-
 /* =========================
     Migration Helpers
     ========================= 
@@ -2404,64 +2639,64 @@ async function migrateOldStorage() {
 // setToastPosition("top-right" | "top-left" | "bottom-left" | "bottom-right")
 
 // === TOAST SYSTEM ===
-(function(){
-  const ICONS = { success:"✔️", error:"✖️", warning:"⚠️", info:"ℹ️", default:"🔔" };
-  function ensureRoot(){
-    let root=document.getElementById("toast-root");
-    if(!root){
-      root=document.createElement("div");
-      root.id="toast-root";
-      document.body.appendChild(root);
+(function () {
+    const ICONS = { success: "✔️", error: "✖️", warning: "⚠️", info: "ℹ️", default: "🔔" };
+    function ensureRoot() {
+        let root = document.getElementById("toast-root");
+        if (!root) {
+            root = document.createElement("div");
+            root.id = "toast-root";
+            document.body.appendChild(root);
+        }
+        return root;
     }
-    return root;
-  }
-  function removeToast(el){
-    el.style.animation="toast-out .16s ease-in forwards";
-    setTimeout(()=>el.remove(),170);
-  }
-  function makeToast({title,message,type="default",duration=3500,closeable=true}){
-    const root=ensureRoot();
-    const el=document.createElement("div");
-    el.className=`toast toast--${type} show`;
-    const icon=document.createElement("div");
-    icon.className="toast__icon";
-    icon.textContent=ICONS[type]||ICONS.default;
-    const content=document.createElement("div");
-    content.className="toast__content";
-    if(title){
-      const t=document.createElement("div");
-      t.className="toast__title";
-      t.textContent=title;
-      content.appendChild(t);
+    function removeToast(el) {
+        el.style.animation = "toast-out .16s ease-in forwards";
+        setTimeout(() => el.remove(), 170);
     }
-    const m=document.createElement("div");
-    m.className="toast__msg";
-    m.textContent=message||title||"";
-    content.appendChild(m);
-    const close=document.createElement("button");
-    close.className="toast__close";
-    close.innerHTML="×";
-    if(closeable)close.addEventListener("click",()=>removeToast(el));
-    else close.style.display="none";
-    el.append(icon,content,close);
-    root.appendChild(el);
-    if(duration>0)setTimeout(()=>removeToast(el),duration);
-    return el;
-  }
-  window.toast=function(arg1,arg2){
-    if(typeof arg1==="object"){
-      const {title,message,type,duration,closeable}=arg1;
-      return makeToast({title,message,type,duration,closeable});
+    function makeToast({ title, message, type = "default", duration = 3500, closeable = true }) {
+        const root = ensureRoot();
+        const el = document.createElement("div");
+        el.className = `toast toast--${type} show`;
+        const icon = document.createElement("div");
+        icon.className = "toast__icon";
+        icon.textContent = ICONS[type] || ICONS.default;
+        const content = document.createElement("div");
+        content.className = "toast__content";
+        if (title) {
+            const t = document.createElement("div");
+            t.className = "toast__title";
+            t.textContent = title;
+            content.appendChild(t);
+        }
+        const m = document.createElement("div");
+        m.className = "toast__msg";
+        m.textContent = message || title || "";
+        content.appendChild(m);
+        const close = document.createElement("button");
+        close.className = "toast__close";
+        close.innerHTML = "×";
+        if (closeable) close.addEventListener("click", () => removeToast(el));
+        else close.style.display = "none";
+        el.append(icon, content, close);
+        root.appendChild(el);
+        if (duration > 0) setTimeout(() => removeToast(el), duration);
+        return el;
     }
-    const message=String(arg1??"");
-    const type=arg2||"default";
-    return makeToast({message,type});
-  };
-  window.setToastPosition=function(pos="bottom-right"){
-    const root=ensureRoot();
-    root.classList.remove("top-right","top-left","bottom-left","bottom-right");
-    root.classList.add(pos);
-  };
+    window.toast = function (arg1, arg2) {
+        if (typeof arg1 === "object") {
+            const { title, message, type, duration, closeable } = arg1;
+            return makeToast({ title, message, type, duration, closeable });
+        }
+        const message = String(arg1 ?? "");
+        const type = arg2 || "default";
+        return makeToast({ message, type });
+    };
+    window.setToastPosition = function (pos = "bottom-right") {
+        const root = ensureRoot();
+        root.classList.remove("top-right", "top-left", "bottom-left", "bottom-right");
+        root.classList.add(pos);
+    };
 })();
 /* 
 *   =========================
@@ -2469,12 +2704,15 @@ async function migrateOldStorage() {
     ========================= 
 */
 async function init() {
-    // show version
+
     $("#ver").textContent = browser.runtime.getManifest().version;
     setToastPosition("bottom-right");
-    // 🔹 Ask for username and register on backend
-    const username = await promptUsernameAndRegister();
-    if (!username) return; // user canceled or invalid
+
+    // 🔹 Show login/register UI & wait for username
+    const username = await initLoginRegisterSystem();
+    console.log("Active session username:", username);
+
+    initPasswordToggle();
 
     // 🔹 Fetch saved data from backend
     try {
@@ -2513,8 +2751,6 @@ async function init() {
         title: "Shop (coming soon)",
         onClick: () => toast("Shop is coming soon!"),
     });
-
-
     // Fill secondary menu (Pokédex, Reset)
     addHeaderButton("secondary", {
         id: "btnPokedex",
@@ -2551,20 +2787,6 @@ async function init() {
     // --- end header buttons ---
 
     // starter pick / restore flow
-    // 🔹 Fetch saved data from backend
-    try {
-        const res = await fetch("https://dstokesncstudio.com/pokeBackend/api/getUser.php", {
-            headers: { "X-Session-User": username }
-        });
-        const json = await res.json();
-
-        if (json.success && json.data) {
-            console.log("Loaded user:", json.data);
-            await browser.storage.local.set(json.data);
-        }
-    } catch (err) {
-        console.error("Failed to load user data:", err);
-    }
 
     const saved = await browser.storage.local.get(["pickedPokemon", "ballPool"]);
 
