@@ -1,5 +1,15 @@
 // js/sidebar.js
 const $ = (s, r = document) => r.querySelector(s);
+let selectedBall = "poke"; // default
+let __startersCache = null;
+let __drag = null; 
+let party = [];           // player's current party (max 6)
+let wild = null;
+let wMaxHP = 0;
+let wHP = 0;
+let pHP = 0;
+let wildSleepTurns = 0;
+let pokestopTimer = null;
 /* =========================
    CONFIG
    ========================= */
@@ -8,18 +18,71 @@ const API_BASE = "https://dstokesncstudio.com/pokeapi/pokeapi.php";
 const GET_POKEMON = (name) => `${API_BASE}?action=getPokemon&name=${encodeURIComponent(String(name).toLowerCase())}`;
 const dev = false;
 const MAX_DEX = 1025;
-let POKEMON_DATA = null;
-const POKEMON_DATA_VERSION = 1;
-// In-memory cache
-let ITEMS_DATA = null;
-// Increase version if you change the JSON structure/content
-const ITEMS_DATA_VERSION = 1;
-let party = [];           // player's current party (max 6)
+const pokeData = await loadPokemonData();
+const ItemsAndMachines = await loadItemsAndMachines();
+const GET_POKEAPI_BY_ID = (id) => `https://pokeapi.co/api/v2/pokemon/${id}`;
+const GET_POKEAPI_SPECIES = (idOrName) => `https://pokeapi.co/api/v2/pokemon-species/${idOrName}`;
+const GET_POKEAPI_MON = (idOrName) => `https://pokeapi.co/api/v2/pokemon/${idOrName}`;
 // ===== Party/Storage keys =====
 const PARTY_KEY = "party";
 const BOXES_KEY = "pcBoxes";
-let __drag = null; // { from: "party"|"box", index: number } while dragging
-// keys for extra inventory
+const SPRITE_NAME_FIXES = {
+    "shaymin-land": "shaymin",
+    "giratina-altered": "giratina",
+    "tornadus-incarnate": "tornadus",
+    "thundurus-incarnate": "thundurus",
+    "landorus-incarnate": "landorus",
+    "keldeo-ordinary": "keldeo",
+    "meloetta-aria": "meloetta",
+    "lycanroc-midday": "lycanroc",
+    "zygarde-50": "zygarde",
+    "wishiwashi-solo": "wishiwashi",
+    "darmanitan-standard": "darmanitan",
+};
+const POKEAPI_VALID_FORMS = {
+    // only include forms that PokéAPI has sprites for
+    mega: [
+        "charizard-mega-x",
+        "charizard-mega-y",
+        "mewtwo-mega-x",
+        "mewtwo-mega-y",
+        "lucario-mega",
+        "gyarados-mega",
+    ],
+    alolan: [
+        "raichu-alola",
+        "marowak-alola",
+        "vulpix-alola",
+        "ninetales-alola",
+    ],
+    galarian: ["zigzagoon-galar", "slowpoke-galar", "rapidash-galar"],
+    hisuian: ["zoroark-hisui", "braviary-hisui", "growlithe-hisui"],
+    paldean: ["wooper-paldea"],
+};
+const LEGENDARY_IDS = [
+    144, 145, 146, 150,
+    243, 244, 245, 249, 250,
+    377, 378, 379, 380, 381, 382, 383, 384,
+    480, 481, 482, 483, 484, 485, 486, 487, 488,
+    638, 639, 640, 641, 642, 643, 644, 645, 646,
+    716, 717, 718,
+    772, 773, 785, 786, 787, 788, 789, 790, 791, 792, 800,
+    888, 889, 890, 891, 892, 894, 895, 896, 897, 898,
+    1001, 1002, 1003, 1004,
+    1007, 1008, 1009, 1010, 1024
+];
+const MYTHICAL_IDS = [
+    151,
+    251,
+    385, 386,
+    489, 490, 491, 492, 493,
+    494, 647, 648, 649,
+    719, 720, 721,
+    801, 802, 807, 808, 809,
+    893
+];
+const LEGENDARY_SET = new Set(LEGENDARY_IDS);
+const MYTHICAL_SET = new Set(MYTHICAL_IDS);
 const STORE = {
     coins: "coins",
     greatBalls: "greatBalls",
@@ -27,9 +90,6 @@ const STORE = {
     masterBalls: "masterBalls",
     cooldown: "pokestopCooldown",
 };
-/* =========================
-   BALLS: CONFIG + HELPERS
-   ========================= */
 const POTION_HEAL = {
     "potion": 20,
     "super-potion": 50,
@@ -37,7 +97,6 @@ const POTION_HEAL = {
     "max-potion": 9999,
     "full-restore": 9999
 };
-
 const BALLS = {
     poke: { label: "Poké Ball", key: "balls", store: "playerStats", mult: 1.0, icon: "⭕" },
     great: { label: "Great Ball", key: STORE.greatBalls, store: "local", mult: 1.5, icon: "🔵" },
@@ -77,15 +136,14 @@ const SOUNDS = {
         "https://github.com/D-Stokes-NC-Gaming-Studio/pokemon-tampermonkey/raw/refs/heads/main/sounds/05%20Battle%20Dome%201.mp3"
     ),
 };
-const pokeData = await loadPokemonData();
-const ItemsAndMachines = await loadItemsAndMachines();
-let selectedBall = "poke"; // default
 const BALL_ITEM_MAP = {
     poke: "poke-ball",
     great: "great-ball",
     ultra: "ultra-ball",
     master: "master-ball"
 };
+
+
 async function getInventory() {
     const stored = await browser.storage.local.get("playerStats");
     let stats = stored.playerStats || [];
@@ -99,7 +157,6 @@ async function getInventory() {
 
     return entry[1]; // return inventory object
 }
-
 async function saveInventory(inv) {
     const stored = await browser.storage.local.get("playerStats");
     let stats = stored.playerStats || [];
@@ -136,7 +193,6 @@ async function decBall(type) {
     const current = await getBallCount(type);
     await setBallCount(type, current - 1);
 }
-
 /*
 *  *    Build a ball button with a corner badge
 *       Important
@@ -203,7 +259,6 @@ async function updateBallSelect() {
         }
     }
 }
-
 /*
 ========================
     Register User
@@ -452,7 +507,6 @@ async function initLoginRegisterSystem() {
         }
     });
 }
-
 async function promptUsernameAndRegister() {
     // ✅ Try persistent sources first
     let username =
@@ -708,7 +762,6 @@ function makeCaughtEntry(p, playerLevel = 5) {
         stats
     };
 }
-
 /* =========================
    PICKER + RESULT RENDER
    ========================= */
@@ -859,7 +912,6 @@ function mapCaughtByDex(caught) {
 function properName(n) {
     return String(n || "").replace(/\b\w/g, m => m.toUpperCase());
 }
-
 /*========================= 
     POKEDEX POKEDEX HELPERS
 ========================= 
@@ -1052,7 +1104,7 @@ async function addCaughtAndRefreshDex(entryLikeWild) {
 /* =========================
    ADD OWNED (DEV) LOOKUP
    ========================= */
-let __startersCache = null;
+
 async function findByNameOrDex(input) {
     if (!__startersCache) __startersCache = await loadStarters();
     const list = __startersCache;
@@ -1114,10 +1166,6 @@ async function saveAddOwned() {
 /* =========================
    BATTLE: SPRITES / NAMES
    ========================= */
-const GET_POKEAPI_BY_ID = (id) => `https://pokeapi.co/api/v2/pokemon/${id}`;
-const GET_POKEAPI_SPECIES = (idOrName) => `https://pokeapi.co/api/v2/pokemon-species/${idOrName}`;
-const GET_POKEAPI_MON = (idOrName) => `https://pokeapi.co/api/v2/pokemon/${idOrName}`;
-
 // Showdown sprite helper (reuses your SPRITE_NAME_FIXES)
 function showdownSlug(name) {
     let slug = String(name || "").toLowerCase().replace(/[^a-z0-9-]/g, "");
@@ -1129,7 +1177,6 @@ function showdownSprite(name, shiny = false) {
         ? `https://play.pokemonshowdown.com/sprites/ani-shiny/${slug}.gif`
         : `https://play.pokemonshowdown.com/sprites/ani/${slug}.gif`;
 }
-
 // DFS: find the node in an evolution chain whose species.name === target
 function findChainNode(chain, targetLower) {
     if (!chain) return null;
@@ -1140,40 +1187,6 @@ function findChainNode(chain, targetLower) {
     }
     return null;
 }
-
-const SPRITE_NAME_FIXES = {
-    "shaymin-land": "shaymin",
-    "giratina-altered": "giratina",
-    "tornadus-incarnate": "tornadus",
-    "thundurus-incarnate": "thundurus",
-    "landorus-incarnate": "landorus",
-    "keldeo-ordinary": "keldeo",
-    "meloetta-aria": "meloetta",
-    "lycanroc-midday": "lycanroc",
-    "zygarde-50": "zygarde",
-    "wishiwashi-solo": "wishiwashi",
-    "darmanitan-standard": "darmanitan",
-};
-const POKEAPI_VALID_FORMS = {
-    // only include forms that PokéAPI has sprites for
-    mega: [
-        "charizard-mega-x",
-        "charizard-mega-y",
-        "mewtwo-mega-x",
-        "mewtwo-mega-y",
-        "lucario-mega",
-        "gyarados-mega",
-    ],
-    alolan: [
-        "raichu-alola",
-        "marowak-alola",
-        "vulpix-alola",
-        "ninetales-alola",
-    ],
-    galarian: ["zigzagoon-galar", "slowpoke-galar", "rapidash-galar"],
-    hisuian: ["zoroark-hisui", "braviary-hisui", "growlithe-hisui"],
-    paldean: ["wooper-paldea"],
-};
 function getRandomForm(baseName) {
     const isShiny = Math.random() < 1 / 128;
     const allForms = Object.entries(POKEAPI_VALID_FORMS).flatMap(
@@ -1222,7 +1235,6 @@ async function setVolume(v) {
     // also update all sounds immediately
     Object.values(SOUNDS).forEach(s => { s.volume = vol; });
 }
-
 /* =========================
    BATTLE: MATH HELPERS
    ========================= */
@@ -1387,11 +1399,7 @@ async function setPlayerMon(mon) {
 /* =========================
    ENCOUNTER STATE
    ========================= */
-let wild = null;
-let wMaxHP = 0;
-let wHP = 0;
-let pHP = 0;
-let wildSleepTurns = 0;
+
 async function setLastEncounter(enc) {
     await browser.storage.local.set({ lastEncounter: enc });
 }
@@ -1406,34 +1414,7 @@ function hpBar(current, max) {
     wrap.appendChild(fill);
     return wrap;
 }
-// All legendary + mythical IDs
-const LEGENDARY_IDS = [
-    144, 145, 146, 150,
-    243, 244, 245, 249, 250,
-    377, 378, 379, 380, 381, 382, 383, 384,
-    480, 481, 482, 483, 484, 485, 486, 487, 488,
-    638, 639, 640, 641, 642, 643, 644, 645, 646,
-    716, 717, 718,
-    772, 773, 785, 786, 787, 788, 789, 790, 791, 792, 800,
-    888, 889, 890, 891, 892, 894, 895, 896, 897, 898,
-    1001, 1002, 1003, 1004,
-    1007, 1008, 1009, 1010, 1024
-];
 
-const MYTHICAL_IDS = [
-    151,
-    251,
-    385, 386,
-    489, 490, 491, 492, 493,
-    494, 647, 648, 649,
-    719, 720, 721,
-    801, 802, 807, 808, 809,
-    893
-];
-
-// Sets for fast lookup
-const LEGENDARY_SET = new Set(LEGENDARY_IDS);
-const MYTHICAL_SET = new Set(MYTHICAL_IDS);
 
 function getRarityByDex(num) {
     if (MYTHICAL_SET.has(num)) return "mythical";   // or "legendary" if you want them merged
@@ -1458,12 +1439,57 @@ function endBattle(message) {
     syncUserDataToBackend();
     const status = $("#battleStatus"); if (status) status.textContent = "";
 }
-/*==========================
-    BATTLE: EVOLUTION CHECK
-    Try to evolve player mon if level-up requirements are met.
-    Returns { evolved: boolean, oldName, newName }.
-==========================
+/*
+    ==================================================================
+    |    BATTLE: EVOLUTION CHECK                                     |
+    |    Try to evolve player mon if level-up requirements are met.  |
+    |    Returns { evolved: boolean, oldName, newName }.             |
+    ==================================================================
 */
+/**
+ * Get moves for a given Pokémon in a specific version group.
+ * Defaults to Scarlet/Violet and level-up moves only.
+ */
+function getMovesForVersion(pokemonName, {
+    versionGroup = "scarlet-violet",
+    methods = ["level-up"]   // pass null to allow all methods
+} = {}) {
+    const mon = pokeData[pokemonName];
+    if (!mon || !mon.moves) return [];
+
+    const result = [];
+
+    for (const [moveName, entries] of Object.entries(mon.moves)) {
+        // entries is the array like [{ level_learned_at, move_learn_method, version_group }, ...]
+        const match = entries.find(e =>
+            e.version_group === versionGroup &&
+            (!methods || methods.includes(e.move_learn_method))
+        );
+
+        if (!match) continue;
+
+        result.push({
+            moveName,                      // "razor-wind"
+            level: match.level_learned_at, // the level for that version
+            method: match.move_learn_method
+        });
+    }
+
+    // sort by level learned
+    result.sort((a, b) => a.level - b.level);
+
+    return result;
+}
+
+function getMoveLevelForScarletViolet(pokemonName, moveName) {
+    const mon = pokeData[pokemonName];
+    if (!mon || !mon.moves || !mon.moves[moveName]) return null;
+
+    const entry = mon.moves[moveName].find(
+        e => e.version_group === "scarlet-violet"
+    );
+    return entry ? entry.level_learned_at : null;
+}
 async function evolvePlayerIfEligible() {
     const player = await getPlayerMon();
     if (!player?.name) return { evolved: false };
@@ -1541,6 +1567,31 @@ async function evolvePlayerIfEligible() {
 
     return { evolved: true, oldName: player.name, newName: pretty(nextName) };
 }
+async function openMoveSelector(player) {
+    const moves = player.moves || [];
+
+    if (!moves.length) {
+        renderBattle("This Pokémon has no learned moves!");
+        return;
+    }
+
+    let html = `<div style="padding:10px;">`;
+    html += `<h3>Select a Move</h3>`;
+
+    for (const mv of moves) {
+        html += `
+            <button class="btn btn-success btn-sm" style="width:100%; margin-top:4px;"
+                onclick="useMove('${mv.name}')">
+                ${mv.name.replace(/-/g, " ")} (PP ${mv.pp})
+            </button>
+        `;
+    }
+
+    html += `</div>`;
+
+    showModal(html); // You already use modals in your extension
+}
+
 /* =========================
    BATTLE CORE
    ========================= */
@@ -1632,7 +1683,6 @@ async function startBattle(opts = {}) {
         if (status) status.textContent = "Failed to fetch wild Pokémon.";
     }
 }
-
 function spriteWithHP({ label, imgSrc, cur, max, flip = false, extraClass = "" }) {
     const col = document.createElement("div");
     col.className = `battle-col ${extraClass}`;   // <-- add class
@@ -1675,6 +1725,7 @@ async function renderBattle(msg) {
     top.className = "battle-top";
 
     const player = await getPlayerMon();
+    const inv = await getInventory();
 
     const wildCol = spriteWithHP({
         label: "Wild",
@@ -1725,22 +1776,28 @@ async function renderBattle(msg) {
     const ctl = document.createElement("div");
     ctl.className = "battle-ctl";
 
-    // ====== Attack Button ======
+    // ==== MOVES BUTTON ====
+    const bMoves = document.createElement("button");
+    bMoves.className = "btn btn-success btn-sm";
+    bMoves.textContent = "📝 Moves";
+    bMoves.onclick = () => openMoveSelector(player);
+    ctl.appendChild(bMoves);
+
+    // ====== Attack (old auto-attack)
     const bAtk = document.createElement("button");
     bAtk.className = "btn btn-success btn-sm";
     bAtk.textContent = "⚔️ Attack";
     bAtk.onclick = playerAttack;
     ctl.appendChild(bAtk);
 
-    // ====== Ball Button ======
+    // ====== Ball Button
     const bBall = document.createElement("button");
     bBall.className = "btn btn-success btn-sm";
     bBall.textContent = "⭕ Ball";
     bBall.onclick = throwBall;
     ctl.appendChild(bBall);
 
-    // ====== Potion Button (disabled if none) ======
-    const inv = await getInventory();
+    // ====== Potion logic
     const totalPotions = Object.entries(inv)
         .filter(([k, v]) => POTION_HEAL[k])
         .reduce((a, [k, v]) => a + v, 0);
@@ -1752,14 +1809,14 @@ async function renderBattle(msg) {
     bPot.disabled = totalPotions <= 0;
     ctl.appendChild(bPot);
 
-    // ====== Run Button ======
+    // ====== Run Button
     const bRun = document.createElement("button");
     bRun.className = "btn btn-success btn-sm";
     bRun.textContent = "🏃 Run";
     bRun.onclick = runAway;
     ctl.appendChild(bRun);
 
-    // ====== Sleep Powder ======
+    // ====== Sleep Powder
     const sleepBtn = document.createElement("button");
     sleepBtn.className = "btn btn-success btn-sm";
     sleepBtn.textContent = "🌙 Sleep Powder";
@@ -1788,7 +1845,6 @@ async function renderBattle(msg) {
 
     const ballLabel = document.createElement("label");
     ballLabel.textContent = "Poké Ball:";
-    ballLabel.setAttribute("for", "ballSelect");
     ballLabel.style.opacity = "0.8";
 
     const select = document.createElement("select");
@@ -1796,9 +1852,8 @@ async function renderBattle(msg) {
     select.className = "input";
     select.style.flex = "1";
 
-    const order = ["poke", "great", "ultra", "master"];
     (async () => {
-        for (const t of order) {
+        for (const t of ["poke", "great", "ultra", "master"]) {
             const conf = BALLS[t];
             const cnt = await getBallCount(t);
             const opt = document.createElement("option");
@@ -1819,7 +1874,7 @@ async function renderBattle(msg) {
     ctl.appendChild(ballRow);
 
     // ===========================================
-    // Potion Selector Dropdown
+    // Potion Selector
     // ===========================================
     const potionRow = document.createElement("div");
     potionRow.className = "tiny";
@@ -1840,7 +1895,6 @@ async function renderBattle(msg) {
     potSelect.style.flex = "1";
 
     let selectedPotion = null;
-
     for (const [name, qty] of Object.entries(inv)) {
         if (!POTION_HEAL[name]) continue;
 
@@ -1859,25 +1913,18 @@ async function renderBattle(msg) {
         potSelect.disabled = true;
     }
 
-    potSelect.onchange = () => {
-        selectedPotion = potSelect.value;
-    };
+    potSelect.onchange = () => selectedPotion = potSelect.value;
 
     potionRow.append(potionLabel, potSelect);
     ctl.appendChild(potionRow);
 
     // ===========================================
-    // Update ball counts
-    // ===========================================
-    await updateBallSelect();
-
-    // ===========================================
     // Final layout
     // ===========================================
+    await updateBallSelect();
     card.append(top, ctl);
     panel.appendChild(card);
 }
-
 async function playerAttack() {
     const player = await getPlayerMon();
     const dmg = calcDamage(player, wild, 40);
@@ -2068,7 +2115,7 @@ function runAway() {
 /* =========================
    PokéStop logic
    ========================= */
-let pokestopTimer = null;
+
 // Format remaining cooldown as mm:ss
 function fmtTime(ms) {
     const m = Math.floor(ms / 60000);
@@ -2197,8 +2244,6 @@ async function openPokeStop() {
 
     await syncUserDataToBackend();
 }
-
-
 /* =========================
     Inventory Helpers
     ========================= */
@@ -2940,162 +2985,6 @@ async function migrateOldStorage() {
     console.log("[migrateOldStorage] Migration complete.");
 }
 /* 
-    =====================================
-        Get the items and pokemon data
-    =====================================
-*/
-async function loadPokemonData() {
-    // 1️⃣ In-memory cache
-    if (POKEMON_DATA) return POKEMON_DATA;
-
-    // 2️⃣ Try browser.storage.local
-    try {
-        if (browser?.storage?.local) {
-            const stored = await browser.storage.local.get([
-                "pokemonData",
-                "pokemonDataVersion"
-            ]);
-
-            if (
-                stored &&
-                stored.pokemonData &&
-                stored.pokemonDataVersion === POKEMON_DATA_VERSION
-            ) {
-                console.log("[PokemonData] Loaded from storage cache");
-                POKEMON_DATA = stored.pokemonData;
-                return POKEMON_DATA;
-            }
-        }
-    } catch (e) {
-        console.warn("[PokemonData] Failed to read from storage:", e);
-    }
-
-    // 3️⃣ Fetch from file inside the extension
-    try {
-        const url = browser.runtime.getURL("data/pokemonData.json");
-        const res = await fetch(url);
-
-        if (!res.ok) {
-            throw new Error("Failed to load pokemonData.json: " + res.status);
-        }
-
-        const json = await res.json();
-        POKEMON_DATA = json;
-
-        // Save to storage for next time
-        try {
-            if (browser?.storage?.local) {
-                await browser.storage.local.set({
-                    pokemonData: json,
-                    pokemonDataVersion: POKEMON_DATA_VERSION
-                });
-                console.log("[PokemonData] Cached to storage");
-            }
-        } catch (e) {
-            console.warn("[PokemonData] Failed to write cache:", e);
-        }
-
-        return POKEMON_DATA;
-    } catch (e) {
-        console.error("[PokemonData] Failed to load from file:", e);
-        POKEMON_DATA = null;
-        return null;
-    }
-}
-async function getPokemonByDex(name) {
-    const data = await loadPokemonData();
-    if (!data) return null;
-
-    // depends on your structure — examples:
-
-    // 1) If it's a plain array: [{id: 1, name: "Bulbasaur"}, ...]
-    // return data.find(p => p.id === num) || null;
-
-    // 2) If it's an object keyed by id: { "1": {...}, "2": {...}, ... }
-    return data[name] || data[String(name)] || null;
-}
-async function loadItemsAndMachines() {
-    // 1️⃣ Memory cache first
-    if (ITEMS_DATA) return ITEMS_DATA;
-
-    // 2️⃣ Try browser.storage.local
-    try {
-        if (browser?.storage?.local) {
-            const stored = await browser.storage.local.get([
-                "itemsData",
-                "itemsDataVersion"
-            ]);
-
-            if (
-                stored &&
-                stored.itemsData &&
-                stored.itemsDataVersion === ITEMS_DATA_VERSION
-            ) {
-                console.log("[Items] Loaded from storage cache");
-                ITEMS_DATA = stored.itemsData;
-                return ITEMS_DATA;
-            }
-        }
-    } catch (err) {
-        console.warn("[Items] Failed to read from storage:", err);
-    }
-
-    // 3️⃣ Fetch fresh file from inside extension
-    try {
-        const url = browser.runtime.getURL("data/items_and_machines.json");
-        const res = await fetch(url);
-
-        if (!res.ok) {
-            throw new Error(
-                "Failed to load items_and_machines.json: " + res.status
-            );
-        }
-
-        const json = await res.json();
-        ITEMS_DATA = json;
-
-        // Cache in browser.storage.local
-        try {
-            if (browser?.storage?.local) {
-                await browser.storage.local.set({
-                    itemsData: json,
-                    itemsDataVersion: ITEMS_DATA_VERSION
-                });
-                console.log("[Items] Cached to storage");
-            }
-        } catch (err) {
-            console.warn("[Items] Failed to write cache:", err);
-        }
-
-        return ITEMS_DATA;
-    } catch (err) {
-        console.error("[Items] Load failed:", err);
-        ITEMS_DATA = null;
-        return null;
-    }
-}
-async function getItemMachines(name) {
-    const data = await loadItemsAndMachines();
-    if (!data) return null;
-
-    // normalize
-    const key = String(name).toLowerCase();
-
-    // check in items
-    if (data.items && data.items[key]) {
-        return data.items[key];
-    }
-
-    // check in machines
-    if (data.machines && data.machines[key]) {
-        return data.machines[key];
-    }
-
-    // nothing found
-    return null;
-}
-
-/* 
     ========================
         Open Store
     ========================
@@ -3105,7 +2994,6 @@ function searchItems(query, items) {
     const q = query.trim().toLowerCase();
     return items.filter(it => it.name && it.name.toLowerCase().includes(q));
 }
-
 function filterStoreByCategory(category, items) {
     if (!category) return items;
     const cat = category.toLowerCase();
@@ -3120,7 +3008,6 @@ function filterStoreByCategory(category, items) {
         return itemCat === cat;
     });
 }
-
 async function openStore() {
     hideAllViews();
 
@@ -3220,8 +3107,6 @@ async function openStore() {
     // First render
     renderStore();
 }
-
-
 // Get a value from playerStats array
 async function getPlayerStat(key, defaultValue) {
     const stored = await browser.storage.local.get("playerStats");
@@ -3242,7 +3127,6 @@ async function setPlayerStat(key, value) {
     await browser.storage.local.set({ playerStats: stats });
     return true;
 }
-
 async function buyItem(itemName) {
     if (!itemName) return console.error("Undefined itemName");
 
@@ -3279,8 +3163,6 @@ async function buyItem(itemName) {
     playSound?.("victory");
     toast(`You bought ${qty} × ${item.name.replace(/-/g, " ")}!`);
 }
-
-
 function hideAllViews() {
     const viewIds = [
         "viewLoginRegister",
@@ -3301,7 +3183,6 @@ function hideAllViews() {
         if (el) el.classList.add("hidden");
     }
 }
-
 // BIND ONCE — globally
 if (!window._storeBuyBound) {
     document.addEventListener("click", (e) => {
@@ -3320,7 +3201,6 @@ if (!window._storeBuyBound) {
 
     window._storeBuyBound = true;
 }
-
 // Show a small toast (use alert if you prefer)
 // Simple toast API:
 // toast("Saved!");
@@ -3453,12 +3333,7 @@ async function migrateOldBallSystemToInventory() {
 
     console.log("[Migration] Old fields cleaned up.");
 }
-
-
-/* 
-*   =========================
-        MAIN INIT
-    ========================= 
+/*  ==========MAIN INIT==========
 */
 async function init() {
 
@@ -3735,5 +3610,3 @@ init().catch(err => {
     console.error(err);
     $("#status").textContent = "Failed to load starters.json";
 });
-console.log(pokeData["bulbasaur"]);
-console.log(ItemsAndMachines["items"]["premier-ball"]);
