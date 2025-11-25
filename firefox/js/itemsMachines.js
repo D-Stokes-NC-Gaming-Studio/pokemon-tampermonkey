@@ -1,9 +1,9 @@
 // In-memory cache
-let ITEMS_DATA = null;
+export let ITEMS_DATA = null;
 // Increase version if you change the JSON structure/content
-const ITEMS_DATA_VERSION = 1;
+export const ITEMS_DATA_VERSION = 1;
 
-async function loadItemsAndMachines() {
+export async function loadItemsAndMachines() {
     // 1️⃣ Memory cache first
     if (ITEMS_DATA) return ITEMS_DATA;
 
@@ -63,7 +63,7 @@ async function loadItemsAndMachines() {
         return null;
     }
 }
-async function getItemMachines(name) {
+export async function getItemMachines(name) {
     const data = await loadItemsAndMachines();
     if (!data) return null;
 

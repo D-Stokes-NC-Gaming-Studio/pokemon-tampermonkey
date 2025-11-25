@@ -1,7 +1,7 @@
-let POKEMON_DATA = null;
-const POKEMON_DATA_VERSION = 1;
+export let POKEMON_DATA = null;
+export const POKEMON_DATA_VERSION = 1;
 
-async function loadPokemonData() {
+export async function loadPokemonData() {
     // 1️⃣ In-memory cache
     if (POKEMON_DATA) return POKEMON_DATA;
 
@@ -59,7 +59,7 @@ async function loadPokemonData() {
         return null;
     }
 }
-async function getPokemonByDex(name) {
+export async function getPokemonByDex(name) {
     const data = await loadPokemonData();
     if (!data) return null;
 

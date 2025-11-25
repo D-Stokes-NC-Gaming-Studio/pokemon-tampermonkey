@@ -22,7 +22,7 @@
         Home
       </button>
       <!--<button id="btnBattle" class="btn btn-success btn-sm" title="Battle Wild Pokémon">⚔️ Battle</button>-->
-      <button id="btnPokeStop" class="btn btn-success btn-sm" title="Spin PokéStop">
+      <button id="btnPokeStop" class="btn btn-success btn-sm text-start w-auto" title="Spin PokéStop">
         📍 PokéStop
       </button>
       <ul id="navPrimary" class="hdr-nav w-auto"></ul>
@@ -31,8 +31,7 @@
   </header>
 
   <!-- ============= Register / Login VIEW ============= -->
-  <section id="viewLoginRegister"
-    class="h-auto d-flex align-items-center justify-content-center bg-dark bg-gradient hidden">
+  <section id="viewLoginRegister" class="h-auto d-flex align-items-center justify-content-center bg-dark bg-gradient hidden">
     <div class="card shadow-lg border-0" style="max-width: 420px; width: 100%">
       <div class="card-body p-4 p-md-5 align-items-center justify-content-center">
         <div id="statusLogin" class="small d-flex mb-3 text-white align-items-center justify-content-center">
@@ -402,6 +401,36 @@ Squirtle, 25, eevee"></textarea>
       </div>
     </form>
   </section>
+
+  <!-- Move Tutor Modal -->
+  <div class="modal fade" id="moveTutorModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+      <div class="modal-content bg-dark text-white">
+        <div class="modal-header">
+          <h5 class="modal-title">Move Tutor</h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+        </div>
+
+        <div class="modal-body">
+          <div id="moveTutorBody"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+<div class="modal fade" id="battleMoveModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content bg-dark text-white">
+            <div class="modal-header">
+                <h5 class="modal-title">Choose a Move</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div id="battleMoveBody"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
   <footer class="muted tiny d-flex gap-2 mx-3 my-2 justify-content-center">
     <span>v</span>
     <span id="ver"></span>
@@ -418,7 +447,6 @@ Squirtle, 25, eevee"></textarea>
   <script type="module" src="js/itemsMachines.js"></script>
   <script type="module" src="js/moves.js"></script>
   <script type="module" src="js/sidebar.js"></script>
-  <script type="module" src="pokemonData.json"></script>
   <script src="js/bootstrap.bundle.min.js"></script>
 </body>
 

@@ -1,15 +1,15 @@
 // =======================
 //  Moves data cache
 // =======================
-let MOVES_DATA = null;
+export let MOVES_DATA = null;
 // bump this whenever you regenerate moves.json
-const MOVES_DATA_VERSION = 1;  
+export const MOVES_DATA_VERSION = 1;  
 
 /**
  * Load moves.json, with in-memory + browser.storage.local cache.
  * File should live at: data/moves.json inside the extension.
  */
-async function loadMovesData() {
+export async function loadMovesData() {
     // 1️⃣ In-memory cache
     if (MOVES_DATA) return MOVES_DATA;
 
@@ -73,7 +73,7 @@ async function loadMovesData() {
  * Assumes moves.json is an object keyed by id string: { "1": {...}, "2": {...}, ... }
  * and each entry has .name on it.
  */
-async function getMoveData(nameOrId) {
+export async function getMoveData(nameOrId) {
     const data = await loadMovesData();
     if (!data) return null;
 

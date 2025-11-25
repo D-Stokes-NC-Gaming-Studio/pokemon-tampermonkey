@@ -1,4 +1,7 @@
 // js/sidebar.js
+import { loadPokemonData } from "./pokemonData.js";
+import { loadItemsAndMachines } from "./itemsMachines.js";
+import {loadMovesData} from './moves.js';
 const $ = (s, r = document) => r.querySelector(s);
 let selectedBall = "poke"; // default
 let __startersCache = null;
@@ -20,6 +23,7 @@ const dev = false;
 const MAX_DEX = 1025;
 const pokeData = await loadPokemonData();
 const ItemsAndMachines = await loadItemsAndMachines();
+const movesData = await loadMovesData();
 const GET_POKEAPI_BY_ID = (id) => `https://pokeapi.co/api/v2/pokemon/${id}`;
 const GET_POKEAPI_SPECIES = (idOrName) => `https://pokeapi.co/api/v2/pokemon-species/${idOrName}`;
 const GET_POKEAPI_MON = (idOrName) => `https://pokeapi.co/api/v2/pokemon/${idOrName}`;
@@ -278,6 +282,23 @@ function initPasswordToggle() {
         icon.classList.toggle("bi-eye", isPwd);
     });
 }
+async function saveAuth(username, password) {
+    await browser.storage.local.set({
+        auth: { username, password }
+    });
+
+    // Store username ONLY
+    localStorage.setItem("username", username);
+    sessionStorage.setItem("username", username);
+
+    // Do NOT store password here
+}
+
+async function loadAuth() {
+    const r = await browser.storage.local.get("auth");
+    return r.auth || null;
+}
+
 async function initLoginRegisterSystem() {
     return new Promise(async (resolve) => {
 
@@ -342,8 +363,12 @@ async function initLoginRegisterSystem() {
             } catch {}
 
             stored = stored || localStorage.getItem("username") || sessionStorage.getItem("username");
-
+            // Prevent password from being mistaken as username
+            if (stored && stored.length < 3) return null;
+            if (stored && stored.includes("@")) return null;
+            if (stored && stored.includes(" ")) return null;
             if (stored) sessionStorage.setItem("username", stored);
+            
             return stored;
         }
 
@@ -351,9 +376,23 @@ async function initLoginRegisterSystem() {
         // -----------------------------------------------------------
         // BACKEND CALLS
         // -----------------------------------------------------------
+        async function loginUser(username, password) {
+            const res = await fetch(
+                "https://dstokesncstudio.com/pokeBackend/api/loginUser.php",
+                {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ username, password })
+                }
+            );
+
+            return await res.json(); // { success: true/false }
+        }
 
         // 🔹 Check if user exists
         async function checkUserExists(username) {
+            console.log("checkUserExists sending:", username);
+
             const res = await fetch(
                 "https://dstokesncstudio.com/pokeBackend/api/getUser.php",
                 {
@@ -363,40 +402,50 @@ async function initLoginRegisterSystem() {
             );
 
             const json = await res.json();
+            console.log("checkUserExists response:", json);
+
             return json.success === true && json.data;
         }
 
+
         // 🔹 Register new user
-        async function registerUser(username) {
+        async function registerUser(username, password) {
             const res = await fetch(
                 "https://dstokesncstudio.com/pokeBackend/api/registerUser.php",
                 {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ username }),
+                    body: JSON.stringify({ username, password }),
                 }
             );
 
-            const json = await res.json();
-            return json.success === true;
+            return await res.json();
         }
+
 
 
         // -----------------------------------------------------------
         // AUTO LOGIN IF USER EXISTS LOCALLY
         // -----------------------------------------------------------
         async function tryAutoLogin() {
-            const stored = await loadStoredUsername();
-            if (!stored) return null;
+            document.getElementById("viewLoginRegister").classList.add("hidden");
+            const auth = await loadAuth();
+            if (!auth) return null;
 
-            const exists = await checkUserExists(stored);
-            if (exists) {
+            const { username, password } = auth;
+
+            // Ask backend to verify
+            const res = await loginUser(username, password);
+
+            if (res.success) {
                 await migrateOldBallSystemToInventory();
-                return stored;
+                
+                return username;
             }
 
-            return null;
+            return null; // Incorrect password or account invalid
         }
+
 
 
         // -----------------------------------------------------------
@@ -420,6 +469,7 @@ async function initLoginRegisterSystem() {
         // -----------------------------------------------------------
         loginBtn.addEventListener("click", async () => {
             const username = usernameInput.value.trim();
+            const password = passwordInput.value.trim();
 
             if (username.length < 3) {
                 showStatus(statusLogin, "Username must be at least 3 characters.", "danger");
@@ -436,11 +486,12 @@ async function initLoginRegisterSystem() {
             }
 
             // SUCCESSFUL LOGIN
-            await saveUser(username);
+            await saveAuth(username, password);
+
             await migrateOldBallSystemToInventory();
 
             showStatus(statusLogin, `Welcome back, ${username}!`, "success");
-
+            document.getElementById("viewLoginRegister").classList.add("hidden");
             resolve(username);
         });
 
@@ -448,10 +499,13 @@ async function initLoginRegisterSystem() {
         // -----------------------------------------------------------
         // REGISTER BUTTON
         // -----------------------------------------------------------
-        registerBtn.addEventListener("click", async () => {
+        registerBtn.addEventListener("click", async (e) => {
+            e.preventDefault();
             const username = regUsername.value.trim();
-
-            if (regPassword.value !== regPassword2.value) {
+            const password = regPassword.value.trim();
+            const confirmPassword = regPassword2.value.trim();
+            console.log("Sending to registerUser.php:", { username, password });
+            if (password !== confirmPassword) {
                 showStatus(statusRegister, "Passwords do not match.", "danger");
                 return;
             }
@@ -463,6 +517,7 @@ async function initLoginRegisterSystem() {
 
             showStatus(statusRegister, "Checking username…", "info");
 
+            // ❗ Correct: check if username exists in backend
             const exists = await checkUserExists(username);
 
             if (exists) {
@@ -472,29 +527,38 @@ async function initLoginRegisterSystem() {
 
             showStatus(statusRegister, "Creating account…", "info");
 
-            const success = await registerUser(username);
+            // Try register user
+            const res = await registerUser(username, password);
 
-            if (!success) {
-                showStatus(statusRegister, "Error creating account.", "danger");
+            if (!res.success) {
+                showStatus(statusRegister, res.error || "Error creating account.", "danger");
                 return;
             }
 
+            // Store auth locally for auto-login later
+            await saveAuth(username, password);
+
             showStatus(statusRegister, "Account created! Please log in.", "success");
 
-            // move back to login screen
+            // Move back to login
             usernameInput.value = username;
             showLogin();
+            showStatus(statusLogin, "Account created! Please log in.", "success");
         });
+
 
 
         // -----------------------------------------------------------
         // INITIAL PAGE LOAD
         // -----------------------------------------------------------
-        const auto = await tryAutoLogin();
-        if (auto) {
-            resolve(auto);
+        const autoAuth = await loadAuth();
+        if (autoAuth?.username && autoAuth?.password?.length >= 6) {
+            const auto = await tryAutoLogin();
+            if (auto) resolve(auto);
             return;
+
         }
+        
 
         const stored = await loadStoredUsername();
         if (stored) {
@@ -1477,7 +1541,7 @@ function getMovesForVersion(pokemonName, {
 
     // sort by level learned
     result.sort((a, b) => a.level - b.level);
-
+    console.log(result);
     return result;
 }
 
@@ -1490,6 +1554,23 @@ function getMoveLevelForScarletViolet(pokemonName, moveName) {
     );
     return entry ? entry.level_learned_at : null;
 }
+// Return only moves the Pokémon can learn in Scarlet/Violet
+// at or below the given level, via level-up.
+function getLearnableMovesForScarletViolet(pokemonName, currentLevel) {
+    if (!pokemonName) return [];
+
+    const normName = String(pokemonName).toLowerCase();
+
+    // Use your existing helper
+    const all = getMovesForVersion(normName, {
+        versionGroup: "scarlet-violet",
+        methods: ["level-up"]
+    });
+
+    // Only moves at or below the current level
+    return all.filter(m => (m.level || 1) <= currentLevel);
+}
+
 async function evolvePlayerIfEligible() {
     const player = await getPlayerMon();
     if (!player?.name) return { evolved: false };
@@ -1568,29 +1649,118 @@ async function evolvePlayerIfEligible() {
     return { evolved: true, oldName: player.name, newName: pretty(nextName) };
 }
 async function openMoveSelector(player) {
-    const moves = player.moves || [];
+    const moves = Array.isArray(player.moves) ? player.moves : [];
 
     if (!moves.length) {
         renderBattle("This Pokémon has no learned moves!");
         return;
     }
 
-    let html = `<div style="padding:10px;">`;
-    html += `<h3>Select a Move</h3>`;
+    let html = `<h3>Select a Move</h3>`;
 
     for (const mv of moves) {
+        const safeName = mv.name || "unknown-move";
+
         html += `
-            <button class="btn btn-success btn-sm" style="width:100%; margin-top:4px;"
-                onclick="useMove('${mv.name}')">
-                ${mv.name.replace(/-/g, " ")} (PP ${mv.pp})
+            <button class="btn btn-primary btn-sm w-100 mb-2 move-btn" 
+                    data-move="${safeName}">
+                ${safeName.replace(/-/g, " ")} (PP ${mv.pp ?? 0})
             </button>
         `;
     }
 
-    html += `</div>`;
+    // Insert into the correct modal
+    const body = document.getElementById("battleMoveBody");
+    if (!body) return;
+    body.innerHTML = html;
 
-    showModal(html); // You already use modals in your extension
+    // Attach useMove()
+    body.querySelectorAll(".move-btn").forEach(btn => {
+        btn.addEventListener("click", async () => {
+            const move = btn.dataset.move;
+            await useMove(move);   // ← proper battle attack
+        });
+    });
+
+    bootstrap.Modal.getOrCreateInstance(
+        document.getElementById("battleMoveModal")
+    ).show();
 }
+
+
+async function useMove(moveName) {
+    const player = await getPlayerMon();
+    if (!player) return;
+
+    // 🔹 Close the modal if open
+    try {
+        const modalEl = document.getElementById("battleMoveModal");
+        const instance = bootstrap.Modal.getInstance(modalEl);
+        if (instance) instance.hide();
+    } catch {}
+
+    // Ensure we have a moves array
+    const moves = Array.isArray(player.moves) ? player.moves : [];
+    const move = moves.find(m => m.name === moveName);
+
+    if (!move) {
+        renderBattle(`${player.name} doesn’t know ${formatMoveName(moveName)}!`);
+        return;
+    }
+
+    // Guard PP
+    if (typeof move.pp !== "number") {
+        move.pp = move.pp ?? 10;
+    }
+
+    if (move.pp <= 0) {
+        renderBattle(`${player.name} has no PP left for ${formatMoveName(move.name)}!`);
+        return;
+    }
+
+    // Accuracy check
+    const accuracy = typeof move.accuracy === "number" ? move.accuracy : 100;
+    const roll = Math.random() * 100;
+
+    // Spend 1 PP
+    move.pp = Math.max(0, move.pp - 1);
+
+    // Save updated PP list
+    player.moves = moves;
+    await setPlayerMon(player);
+
+    if (roll > accuracy) {
+        renderBattle(`${player.name} used ${formatMoveName(move.name)}, but it missed!`);
+        setTimeout(wildAttack, 800);
+        return;
+    }
+
+    // Damage using move power or fallback to 40
+    const basePower = (typeof move.power === "number" && move.power > 0) ? move.power : 40;
+    const dmg = calcDamage(player, wild, basePower);
+
+    wHP = Math.max(0, wHP - dmg);
+    wild.currentHP = wHP;
+    await setLastEncounter(wild);
+
+    if (wHP <= 0) {
+        const { gain, leveled, level } = await grantExpForWin(wild);
+        renderBattle(
+            `${player.name} used ${formatMoveName(move.name)}! ` +
+            `${wild.name} fainted! +${gain} EXP${leveled ? ` ⬆️ Lv ${level}!` : ""}`
+        );
+        setTimeout(() => endBattle("You won! Start another battle."), 5000);
+        return;
+    }
+
+    // Wild counterattacks
+    renderBattle(
+        `${player.name} used ${formatMoveName(move.name)}! It dealt ${dmg} damage!`
+    );
+
+    setTimeout(wildAttack, 800);
+}
+
 
 /* =========================
    BATTLE CORE
@@ -1785,7 +1955,7 @@ async function renderBattle(msg) {
 
     // ====== Attack (old auto-attack)
     const bAtk = document.createElement("button");
-    bAtk.className = "btn btn-success btn-sm";
+    bAtk.className = "btn btn-success btn-sm disabled";
     bAtk.textContent = "⚔️ Attack";
     bAtk.onclick = playerAttack;
     ctl.appendChild(bAtk);
@@ -3183,6 +3353,170 @@ function hideAllViews() {
         if (el) el.classList.add("hidden");
     }
 }
+
+
+async function learnMove(moveName) {
+    const player = await getPlayerMon();
+    if (!player) return;
+
+    const pretty = formatMoveName(moveName);
+    const playerMoves = Array.isArray(player.moves) ? player.moves : [];
+
+    if (playerMoves.some(m => m.name === moveName)) {
+        showMoveTutorModal(`<p>${player.name} already knows <b>${pretty}</b>.</p>`);
+        return;
+    }
+
+    if (playerMoves.length >= 4) {
+        let html = `
+        <p><b>${player.name}</b> already knows 4 moves.</p>
+        <p>Select a move to forget:</p>
+        `;
+
+        html += player.moves.map(m => `
+            <button class="btn btn-danger btn-sm mt-1 w-100"
+                onclick="replaceMove('${m.name}','${moveName}')">
+                Replace ${formatMoveName(m.name)}
+            </button>
+        `).join("");
+
+        showMoveTutorModal(html);
+        return;
+    }
+
+    const moveData = getMoveDetails(moveName);
+    player.moves = Array.isArray(player.moves) ? player.moves : [];
+    player.moves.push(moveData);
+
+    await setPlayerMon(player);
+
+    showMoveTutorModal(`<b>${player.name}</b> learned <b>${pretty}</b>!`);
+    setTimeout(() => openMoveTutor(), 800);
+}
+
+async function replaceMove(oldMove, newMove) {
+    const player = await getPlayerMon();
+    if (!player) return;
+
+    const playerMoves = Array.isArray(player.moves) ? player.moves : [];
+    const idx = playerMoves.findIndex(m => m.name === oldMove);
+    if (idx < 0) return;
+
+    playerMoves[idx] = getMoveDetails(newMove);
+    player.moves = playerMoves;
+
+    await setPlayerMon(player);
+
+    showMoveTutorModal(`
+        <p>${player.name} forgot <b>${formatMoveName(oldMove)}</b> 
+        and learned <b>${formatMoveName(newMove)}</b>!</p>
+    `);
+
+    setTimeout(() => openMoveTutor(), 900);
+}
+
+async function forgetMove(moveName) {
+    const player = await getPlayerMon();
+    if (!player) return;
+
+    const playerMoves = Array.isArray(player.moves) ? player.moves : [];
+    player.moves = playerMoves.filter(m => m.name !== moveName);
+
+    await setPlayerMon(player);
+    showMoveTutorModal(`<p>${player.name} forgot <b>${formatMoveName(moveName)}</b>.</p>`);
+
+    setTimeout(() => openMoveTutor(), 800);
+}
+
+function formatMoveName(n) {
+    return n.replace(/-/g, " ").replace(/\b\w/g, c => c.toUpperCase());
+}
+
+function getMoveDetails(moveName) {
+    const mv = movesData[moveName];
+    return {
+        name: moveName,
+        pp: mv?.pp ?? 10,
+        power: mv?.power ?? 0,
+        accuracy: mv?.accuracy ?? 100,
+        type: mv?.type ?? "normal"
+    };
+}
+
+// Builds the HTML and shows the modal
+async function openMoveTutor() {
+    const player = await getPlayerMon();
+    if (!player?.name) {
+        showMoveTutorModal("<p>No active Pokémon in your party.</p>");
+        return;
+    }
+
+    const speciesName = String(player.name).toLowerCase();
+    const allMoves = getLearnableMovesForScarletViolet(speciesName, player.level); // whatever helper you use
+    console.log(allMoves);
+    const eligibleMoves = allMoves.filter(m => m.level <= player.level);
+
+    if (!eligibleMoves.length) {
+        showMoveTutorModal(`<p>${player.name} can't learn any moves at its current level.</p>`);
+        return;
+    }
+
+    let html = `<div class="move-tutor-list">`;
+    html += `<h5>${player.name} – level ${player.level}</h5>`;
+    html += `<p>Choose up to 4 moves. Learned moves are highlighted.</p>`;
+
+    const playerMoves = Array.isArray(player.moves) ? player.moves : [];
+    const currentNames = playerMoves.map(m => m.name);
+
+    for (const move of eligibleMoves) {
+        const learned = currentNames.includes(move.moveName);
+        html += `
+            <button class="btn btn-sm ${learned ? "btn-success" : "btn-outline-light"} mb-2 w-100"
+                    data-move="${move.moveName}">
+                <div class="d-flex justify-content-between">
+                    <span>${move.moveName.replace(/-/g, " ")}</span>
+                    <span class="small text-muted">Lv ${move.level}</span>
+                </div>
+            </button>
+        `;
+    }
+
+    html += `</div>`;
+
+    showMoveTutorModal(html);
+}
+function showModal(html) {
+    showMoveTutorModal(html);
+}
+// Only handles DOM + Bootstrap, never receives events
+function showMoveTutorModal(html) {
+    const body = document.getElementById("moveTutorBody");
+    if (!body) return;
+
+    body.innerHTML = html;
+
+    body.querySelectorAll("button[data-move]").forEach(btn => {
+        btn.addEventListener("click", async (e) => {
+            const moveName = e.currentTarget.dataset.move;
+            await learnMove(moveName);
+        });
+    });
+
+    bootstrap.Modal.getOrCreateInstance(
+        document.getElementById("moveTutorModal")
+    ).show();
+}
+
+
+// global handler used by the buttons in the HTML above
+window.tm_selectMove = async function (moveName) {
+    const player = await getPlayerMon();
+    if (!player) return;
+
+    // TODO: your logic to add/replace moves, enforce 4-move limit, etc.
+    console.log("Selected move:", moveName, "for", player.name);
+};
+
 // BIND ONCE — globally
 if (!window._storeBuyBound) {
     document.addEventListener("click", (e) => {
@@ -3371,6 +3705,13 @@ async function init() {
         title: "Battle!",
         onClick: showBattle,
     });
+    addHeaderButton("secondary", {
+        id: "pokeMoves",
+        text: "Moves",
+        title: "Moves",
+        onClick: () => openMoveTutor(),
+    });
+
     addHeaderButton("secondary", {
         id: "btnOnlineBattle",
         text: "⚔️ Online Battle",
