@@ -228,8 +228,7 @@
     </div>
   </section>
   <!-- ============= ONLINE BATTLE VIEW ============= -->
-  <section id="viewOnlineBattle"
-    class="h-auto d-flex align-items-center justify-content-center bg-dark bg-gradient hidden">
+  <section id="viewOnlineBattle" class="h-auto d-flex align-items-center justify-content-center bg-dark bg-gradient hidden">
     <div class="card shadow-lg border-0" style="max-width: 520px; width: 100%">
       <div class="card-body p-4 p-md-5">
         <!-- Header -->
@@ -250,6 +249,7 @@
           <p id="bcText" class="mb-1 fs-5 fw-light">
             Choose how you want to battle:
           </p>
+          <div id="turnTimerLabel" class="badge bg-warning text-dark">1:00</div>
         </div>
 
         <!-- Find Match Button -->
@@ -417,19 +417,19 @@ Squirtle, 25, eevee"></textarea>
       </div>
     </div>
   </div>
-<div class="modal fade" id="battleMoveModal" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered modal-lg">
-        <div class="modal-content bg-dark text-white">
-            <div class="modal-header">
-                <h5 class="modal-title">Choose a Move</h5>
-                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
-            </div>
-            <div class="modal-body">
-                <div id="battleMoveBody"></div>
-            </div>
-        </div>
-    </div>
-</div>
+  <div class="modal fade" id="battleMoveModal" tabindex="-1" aria-hidden="true">
+      <div class="modal-dialog modal-dialog-centered modal-lg">
+          <div class="modal-content bg-dark text-white">
+              <div class="modal-header">
+                  <h5 class="modal-title">Choose a Move</h5>
+                  <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+              </div>
+              <div class="modal-body">
+                  <div id="battleMoveBody"></div>
+              </div>
+          </div>
+      </div>
+  </div>
 
   <footer class="muted tiny d-flex gap-2 mx-3 my-2 justify-content-center">
     <span>v</span>

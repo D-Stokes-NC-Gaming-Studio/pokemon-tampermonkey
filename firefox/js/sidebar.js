@@ -2,6 +2,14 @@
 import { loadPokemonData } from "./pokemonData.js";
 import { loadItemsAndMachines } from "./itemsMachines.js";
 import {loadMovesData} from './moves.js';
+import { onlineBatttleConfig } from "./onlineBattleConfig.js";
+import { createTurnTimer } from "./turnTimer.js";
+const turnTimer = createTurnTimer(onlineBatttleConfig.waitTime);
+
+/* =========================
+    GLOBALS
+    ========================= 
+*/
 const $ = (s, r = document) => r.querySelector(s);
 let selectedBall = "poke"; // default
 let __startersCache = null;
@@ -13,14 +21,11 @@ let wHP = 0;
 let pHP = 0;
 let wildSleepTurns = 0;
 let pokestopTimer = null;
-/* =========================
-   CONFIG
-   ========================= */
-// Need to add user input for username //
 const API_BASE = "https://dstokesncstudio.com/pokeapi/pokeapi.php";
 const GET_POKEMON = (name) => `${API_BASE}?action=getPokemon&name=${encodeURIComponent(String(name).toLowerCase())}`;
 const dev = false;
 const MAX_DEX = 1025;
+
 const pokeData = await loadPokemonData();
 const ItemsAndMachines = await loadItemsAndMachines();
 const movesData = await loadMovesData();
@@ -146,7 +151,179 @@ const BALL_ITEM_MAP = {
     ultra: "ultra-ball",
     master: "master-ball"
 };
+async function getUsername() {
+    let stored = null;
 
+    try {
+        const r = await browser.storage.local.get("username");
+        if (r.username) stored = r.username;
+    } catch(e){
+        console.error("Error getting username from storage:", e);
+    }
+
+    stored = stored || localStorage.getItem("username") || sessionStorage.getItem("username");
+    // Prevent password from being mistaken as username
+    if (stored && stored.length < 3) return null;
+    if (stored && stored.includes("@")) return null;
+    if (stored && stored.includes(" ")) return null;
+    if (stored) sessionStorage.setItem("username", stored);
+    
+    return stored;
+}
+
+// Time Helpers for online battle //
+function getCurrentTimestamp() {
+    return Math.floor(Date.now() / 1000);
+}
+function getFutureTimestamp(secondsAhead) {
+    return Math.floor(Date.now() / 1000) + secondsAhead;
+}
+function startPlayerTurn() {
+    onlineBatttleConfig.playerTurn = true;
+    onlineBatttleConfig.opponentTurn = false;
+
+    turnTimer.start("player", {
+        waitTime: onlineBatttleConfig.waitTime,
+        onExpire: handlePlayerTimeout
+    });
+}
+
+function handlePlayerTimeout(side) {
+    // side === "player"
+    onlineBatttleConfig.battleLog.push({
+        turn: onlineBatttleConfig.turn,
+        message: `${onlineBatttleConfig.playerName} took too long!`
+    });
+
+    // TODO: auto-select default move or force switch/forfeit
+    autoChooseMoveForPlayer();
+}
+
+function startOpponentTurn() {
+    onlineBatttleConfig.playerTurn = false;
+    onlineBatttleConfig.opponentTurn = true;
+
+    turnTimer.start("opponent", {
+        waitTime: onlineBatttleConfig.waitTime,
+        onExpire: handleOpponentTimeout
+    });
+}
+
+function handleOpponentTimeout(side) {
+    // side === "opponent"
+    onlineBatttleConfig.battleLog.push({
+        turn: onlineBatttleConfig.turn,
+        message: `${onlineBatttleConfig.opponentUsername} ran out of time!`
+    });
+
+    // For online battles you might:
+    // - auto-move
+    // - mark a loss
+    // - send a "timeout" to the server
+}
+function startOnlineBattle() {
+    // set initial state
+    onlineBatttleConfig.turn = 1;
+    onlineBatttleConfig.playerTurn = true;
+    onlineBatttleConfig.opponentTurn = false;
+
+    onlineBatttleConfig.battleLog.push({
+        turn: 1,
+        message: `Battle started vs ${onlineBatttleConfig.opponentUsername}!`
+    });
+
+    // start the player's decision timer
+    startPlayerDecisionTimer();
+}
+
+function startPlayerDecisionTimer() {
+    turnTimer.start("player", {
+        waitTime: onlineBatttleConfig.waitTime,
+        onExpire: handlePlayerTimeout
+    });
+}
+
+// example: called when player taps a move or chooses next Pokémon
+export function onPlayerChoseAction(action) {
+    // action = selected move or chosen Pokémon
+    // stop timer because they made a choice in time
+    turnTimer.cancel();
+
+    // TODO: send action to server, resolve turn, then...
+    // when it's opponent's turn (remote or AI), start their timer:
+    startOpponentDecisionTimer();
+}
+
+function startOpponentDecisionTimer() {
+    turnTimer.start("opponent", {
+        waitTime: onlineBatttleConfig.waitTime,
+        onExpire: handleOpponentTimeout
+    });
+}
+
+function handlePlayerTimeout(side) {
+    console.log("Timer expired for:", side);
+
+    onlineBatttleConfig.battleLog.push({
+        turn: onlineBatttleConfig.turn,
+        message: `${onlineBatttleConfig.playerName || "You"} ran out of time!`
+    });
+
+    // TODO: auto-choose:
+    // - first available move, or
+    // - forced switch, or
+    // - forfeit
+    autoChooseMoveForPlayer();
+}
+
+function handleOpponentTimeout(side) {
+    console.log("Timer expired for:", side);
+
+    onlineBatttleConfig.battleLog.push({
+        turn: onlineBatttleConfig.turn,
+        message: `${onlineBatttleConfig.opponentUsername} ran out of time!`
+    });
+
+    // For true online: maybe treat as disconnect / forfeit
+    // For AI: auto-move for them instead
+    autoChooseMoveForOpponent();
+}
+function autoChooseMoveForPlayer() {
+    // Simple auto-move: pick first available move
+    const playerMon = onlineBatttleConfig.playerActivePokemon;
+    if (playerMon && playerMon.moves && playerMon.moves.length > 0) {
+        const move = playerMon.moves[0];
+        onlineBatttleConfig.battleLog.push({
+            turn: onlineBatttleConfig.turn,
+            message: `${onlineBatttleConfig.playerName} used ${move.name}!`
+        });
+    }
+}
+function autoChooseMoveForOpponent() {
+    // Simple auto-move: pick first available move
+    const oppMon = onlineBatttleConfig.opponentActivePokemon;
+    if (oppMon && oppMon.moves && oppMon.moves.length > 0) {
+        const move = oppMon.moves[0];
+        onlineBatttleConfig.battleLog.push({
+            turn: onlineBatttleConfig.turn,
+            message: `${onlineBatttleConfig.opponentUsername} used ${move.name}!`
+        });
+    }
+}
+function sendBattleLogToServer(username, opponent, battleLog) {
+    const logEndpoint =
+        "https://dstokesncstudio.com/pokeBackend/api/battle.php?action=logBattle";
+
+    return fetchJSONViaBG(logEndpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+            player: username,
+            opponent: opponent,
+            battleLog: battleLog
+        })
+    });
+}
 
 async function getInventory() {
     const stored = await browser.storage.local.get("playerStats");
@@ -3544,7 +3721,7 @@ if (!window._storeBuyBound) {
 
 // === TOAST SYSTEM ===
 (function () {
-    const ICONS = { success: "✔️", error: "✖️", warning: "⚠️", info: "ℹ️", default: "🔔" };
+    const ICONS = { success: "✔️", error: "✖️", warning: "⚠️", info: "ℹ️", default: "🔔", battle: "⚔️" };
     function ensureRoot() {
         let root = document.getElementById("toast-root");
         if (!root) {
@@ -3855,9 +4032,104 @@ async function init() {
     $("#btnHome")?.addEventListener("click", showPicker);
     $("#btnStartBattle")?.addEventListener("click", startBattle);
     document.getElementById("btnFindMatch")?.addEventListener("click", () => {
+        const timerLabel = document.getElementById("turnTimerLabel");
+        // Update timer label periodically
+        setInterval(() => {
+            if (!timerLabel) return;
+            if (!turnTimer.isRunning()) {
+                timerLabel.textContent = "--:--";
+                return;
+            }
+            timerLabel.textContent = turnTimer.formatRemaining();
+        }, 200);
+        const btn = document.getElementById("btnFindMatch");
+        const bcText = document.getElementById("bcText");
+
+        if (!btn || !bcText) return;
+
         console.log("Finding match...");
-        document.getElementById("bcText").innerHTML = "Finding match...";
-        // TODO: call your matchmaking API
+        bcText.innerHTML = "Finding match...";
+        btn.disabled = true;
+        btn.textContent = "Finding...";
+
+        const getUserEndpoint =
+            "https://dstokesncstudio.com/pokeBackend/api/battle.php?action=getRandomUser";
+
+        fetchJSONViaBG(getUserEndpoint)
+            .then((json) => {
+                if (json?.status === "success" && json.user) {
+                    if(json.user.party && Array.isArray(json.user.party) == [] || json.user.party == null){
+                        error("No party found for opponent");
+                        bcText.innerHTML = "No party found for opponent.";
+                        return;
+                    }
+                    console.log("Match found:", json.user);
+                    bcText.innerHTML = `Match found: <b>${json.user}</b>`;
+
+                    // TODO: set config + start battle/turn timer here
+                    // onlineBatttleConfig.opponentUsername = json.user;
+                    // startOnlineBattle();
+                    
+                    getUsername().then((username) => {
+                        if (!username) {
+                            console.log("No username found.");
+                            toast({ title: "error", message: "Battle log saved to server.!", type: "error" });
+                            return;
+                        }
+                        onlineBatttleConfig.opponentUsername = json.user;
+                        onlineBatttleConfig.opponentParty = json.party || [];
+                        onlineBatttleConfig.opponentMoves = json.moves || [];
+                        onlineBatttleConfig.opponentReady = true;
+
+                        onlineBatttleConfig.playerUsername = username;
+                        onlineBatttleConfig.playerParty = json.player.party || [];
+                        onlineBatttleConfig.playerMoves = json.player.moves || [];
+                        onlineBatttleConfig.playerReady = true;
+
+                        onlineBatttleConfig.battleLog = [
+                            { type: "info", message: `Match found: ${json.user}` },
+                            { type: "info", message: `Player: ${username}` },
+                            { type: "info", message: `Opponent Pokemon: ${json.party}` },
+                            { type: "info", message: `Opponent Moves: ${json.moves}` },
+                            { type: "info", message: `Player Pokemon: ${json.player.party}` },
+                            { type: "info", message: `Player Moves: ${json.player.moves}` },
+                            { type: "info", message: `Both players are ready.` },
+
+                        ];
+                        // send to server
+                        sendBattleLogToServer(username, json.user, onlineBatttleConfig.battleLog)
+                            .then((res) => {
+                                console.log("Battle log saved:", res);
+                                toast({ title: "Battle", message: "Battle log saved to server.!", type: "success" });
+                                
+                            })
+                            .catch((err) => {
+                                console.error("Failed to save battle log:", err);
+                                toast({ title: "error", message: "Failed to save battle log to the server!", type: "error" });
+                            });
+
+                        startOnlineBattle();
+                    
+                    }).catch((e) => {
+                        console.error("Failed to get username:", e);
+                        toast({ title: "error", message: "Failed to get username!", type: "error" });
+                    });
+                } else {
+                    console.error("No user found in response:", json);
+                    toast({ title: "error", message: "No match found!", type: "error" });
+                    bcText.innerHTML = "No match found.";
+                }
+            })
+            .catch((err) => {
+                console.error("Matchmaking failed:", err);
+                toast({ title: "error", message: "Matchmaking failed!", type: "error" });
+                bcText.innerHTML = "Matchmaking failed.";
+            })
+            .finally(() => {
+                btn.disabled = false;
+                btn.textContent = "Find Match";
+            });
+        
     });
 
     document.getElementById("btnCreateRoom")?.addEventListener("click", () => {
