@@ -1,9 +1,10 @@
 // js/sidebar.js
-import { loadPokemonData } from "./pokemonData.js";
-import { loadItemsAndMachines } from "./itemsMachines.js";
+import {loadPokemonData} from "./pokemonData.js";
+import {loadItemsAndMachines} from "./itemsMachines.js";
 import {loadMovesData} from './moves.js';
-import { onlineBatttleConfig } from "./onlineBattleConfig.js";
-import { createTurnTimer } from "./turnTimer.js";
+import {onlineBatttleConfig} from "./onlineBattleConfig.js";
+import {createTurnTimer} from "./turnTimer.js";
+
 const turnTimer = createTurnTimer(onlineBatttleConfig.waitTime);
 
 /* =========================
@@ -151,6 +152,7 @@ const BALL_ITEM_MAP = {
     ultra: "ultra-ball",
     master: "master-ball"
 };
+
 async function getUsername() {
     let stored = null;
 
@@ -170,7 +172,6 @@ async function getUsername() {
     
     return stored;
 }
-
 // Time Helpers for online battle //
 function getCurrentTimestamp() {
     return Math.floor(Date.now() / 1000);
@@ -187,18 +188,6 @@ function startPlayerTurn() {
         onExpire: handlePlayerTimeout
     });
 }
-
-function handlePlayerTimeout(side) {
-    // side === "player"
-    onlineBatttleConfig.battleLog.push({
-        turn: onlineBatttleConfig.turn,
-        message: `${onlineBatttleConfig.playerName} took too long!`
-    });
-
-    // TODO: auto-select default move or force switch/forfeit
-    autoChooseMoveForPlayer();
-}
-
 function startOpponentTurn() {
     onlineBatttleConfig.playerTurn = false;
     onlineBatttleConfig.opponentTurn = true;
@@ -207,19 +196,6 @@ function startOpponentTurn() {
         waitTime: onlineBatttleConfig.waitTime,
         onExpire: handleOpponentTimeout
     });
-}
-
-function handleOpponentTimeout(side) {
-    // side === "opponent"
-    onlineBatttleConfig.battleLog.push({
-        turn: onlineBatttleConfig.turn,
-        message: `${onlineBatttleConfig.opponentUsername} ran out of time!`
-    });
-
-    // For online battles you might:
-    // - auto-move
-    // - mark a loss
-    // - send a "timeout" to the server
 }
 function startOnlineBattle() {
     // set initial state
@@ -235,14 +211,12 @@ function startOnlineBattle() {
     // start the player's decision timer
     startPlayerDecisionTimer();
 }
-
 function startPlayerDecisionTimer() {
     turnTimer.start("player", {
         waitTime: onlineBatttleConfig.waitTime,
         onExpire: handlePlayerTimeout
     });
 }
-
 // example: called when player taps a move or chooses next Pokémon
 export function onPlayerChoseAction(action) {
     // action = selected move or chosen Pokémon
@@ -253,14 +227,12 @@ export function onPlayerChoseAction(action) {
     // when it's opponent's turn (remote or AI), start their timer:
     startOpponentDecisionTimer();
 }
-
 function startOpponentDecisionTimer() {
     turnTimer.start("opponent", {
         waitTime: onlineBatttleConfig.waitTime,
         onExpire: handleOpponentTimeout
     });
 }
-
 function handlePlayerTimeout(side) {
     console.log("Timer expired for:", side);
 
@@ -275,7 +247,6 @@ function handlePlayerTimeout(side) {
     // - forfeit
     autoChooseMoveForPlayer();
 }
-
 function handleOpponentTimeout(side) {
     console.log("Timer expired for:", side);
 
@@ -290,7 +261,7 @@ function handleOpponentTimeout(side) {
 }
 function autoChooseMoveForPlayer() {
     // Simple auto-move: pick first available move
-    const playerMon = onlineBatttleConfig.playerActivePokemon;
+    const playerMon = getPlayerMon()
     if (playerMon && playerMon.moves && playerMon.moves.length > 0) {
         const move = playerMon.moves[0];
         onlineBatttleConfig.battleLog.push({
@@ -352,14 +323,12 @@ async function saveInventory(inv) {
 
     await browser.storage.local.set({ playerStats: stats });
 }
-
 async function getBallCount(type) {
     const inv = await getInventory();
     const itemName = BALL_ITEM_MAP[type];
     if (!itemName) return 0;
     return inv[itemName] || 0;
 }
-
 async function setBallCount(type, newVal) {
     const inv = await getInventory();
     const itemName = BALL_ITEM_MAP[type];
@@ -369,7 +338,6 @@ async function setBallCount(type, newVal) {
 
     await saveInventory(inv);
 }
-
 async function decBall(type) {
     const current = await getBallCount(type);
     await setBallCount(type, current - 1);
@@ -470,12 +438,10 @@ async function saveAuth(username, password) {
 
     // Do NOT store password here
 }
-
 async function loadAuth() {
     const r = await browser.storage.local.get("auth");
     return r.auth || null;
 }
-
 async function initLoginRegisterSystem() {
     return new Promise(async (resolve) => {
 
@@ -1609,14 +1575,84 @@ function wireGlobalMenuClose() {
 /* =========================
    PLAYER MON (ACTIVE PARTNER)
    ========================= */
+/**
+ * Builds your full online battle party including:
+ * - Stats
+ * - HP
+ * - Level
+ * - 4 moves (power, pp, accuracy, type, etc.)
+ */
+async function getOnlineBattleParty() {
+    const { party } = await browser.storage.local.get("party");
+
+    if (!Array.isArray(party) || party.length === 0) {
+        console.warn("No party set.");
+        return [];
+    }
+
+    const caught = await getCaughtWithUID();
+    const byUID = mapCaughtByUID(caught);
+
+    const finalParty = [];
+
+    for (const uid of party) {
+        const mon = byUID.get(uid);
+        if (!mon) continue;
+
+        // Extract stats exactly as they exist
+        const stats = {
+            hp: mon.stats?.hp ?? 10,
+            attack: mon.stats?.attack ?? 5,
+            defense: mon.stats?.defense ?? 5,
+            spattack: mon.stats?.spattack ?? 5,
+            spdefense: mon.stats?.spdefense ?? 5,
+            speed: mon.stats?.speed ?? 5
+        };
+
+        // Moves must be the real object from your caught[] list
+        const moves = (Array.isArray(mon.moves) ? mon.moves : [])
+            .slice(0, 4) // limit to 4
+            .map(move => ({
+                name: move.name ?? "Unknown Move",
+                type: move.type ?? "normal",
+                power: move.power ?? 0,
+                accuracy: move.accuracy ?? 100,
+                pp: move.pp ?? 5,
+                max_pp: move.pp ?? 5,
+
+                // Optional fields if you add them later
+                damage_class: move.damage_class ?? "physical",
+                stat_changes: move.stat_changes ?? [],
+                priority: move.priority ?? 0,
+                ailment: move.ailment ?? null,
+                ailmentChance: move.ailmentChance ?? 0,
+                flinchChance: move.flinchChance ?? 0,
+                effect: move.effect ?? "",
+                shortEffect: move.shortEffect ?? ""
+            }));
+
+        // Final Pokémon object
+        finalParty.push({
+            uid: mon.uid,
+            pokedex: mon.pokeDex_num,
+            name: mon.name,
+            level: mon.level,
+            currentHP: mon.currentHP,
+            stats,
+            moves
+        });
+    }
+
+    return finalParty;
+}
+
 async function getPlayerMon() {
     const { party } = await browser.storage.local.get("party");
     const caught = await getCaughtWithUID();
     const byUID = mapCaughtByUID(caught);
 
     if (Array.isArray(party) && party[0]) {
-        const mon = byUID.get(party[0]) || null;
-        return mon;
+        return byUID.get(party[0]) || null;
     }
     return null;
 }
@@ -1863,8 +1899,6 @@ async function openMoveSelector(player) {
         document.getElementById("battleMoveModal")
     ).show();
 }
-
-
 async function useMove(moveName) {
     const player = await getPlayerMon();
     if (!player) return;
@@ -1937,8 +1971,6 @@ async function useMove(moveName) {
 
     setTimeout(wildAttack, 800);
 }
-
-
 /* =========================
    BATTLE CORE
    ========================= */
@@ -2403,7 +2435,6 @@ async function usePotion() {
     renderBattle(`Used ${chosen.replace(/-/g, " ")}! HP restored.`);
     setTimeout(wildAttack, 500);
 }
-
 async function throwBall() {
     const ball = BALLS[selectedBall] || BALLS.poke;
 
@@ -2462,7 +2493,6 @@ function runAway() {
 /* =========================
    PokéStop logic
    ========================= */
-
 // Format remaining cooldown as mm:ss
 function fmtTime(ms) {
     const m = Math.floor(ms / 60000);
@@ -2839,7 +2869,6 @@ async function loadPartyAndBoxes() {
 
     return { party: safeParty, boxes };
 }
-
 function compactParty(party) {
     return party.filter(Boolean).slice(0, 6);
 }
@@ -3072,13 +3101,13 @@ function wireBoxArrows() {
         const boxes = (await browser.storage.local.get(BOXES_KEY))[BOXES_KEY];
         boxes.current = (boxes.current - 1 + boxes.boxes.length) % boxes.boxes.length;
         await saveBoxes(boxes);
-        renderPartyAndStorage();
+        await renderPartyAndStorage();
     };
     if (next) next.onclick = async () => {
         const boxes = (await browser.storage.local.get(BOXES_KEY))[BOXES_KEY];
         boxes.current = (boxes.current + 1) % boxes.boxes.length;
         await saveBoxes(boxes);
-        renderPartyAndStorage();
+        await renderPartyAndStorage();
     };
 }
 // Call after you push a new caught entry into `caught` and setCaught(list)
@@ -3844,6 +3873,49 @@ async function migrateOldBallSystemToInventory() {
 
     console.log("[Migration] Old fields cleaned up.");
 }
+async function setOnlineBPDB() {
+    // getUsername is async, so we MUST await it
+    const username = await getUsername();
+    if (!username) {
+        console.warn("setOnlineBPDB: No username found.");
+        return { success: false, message: "No username" };
+    }
+
+    const onlineBP = getOnlineBattleParty(); // if this becomes async later, add await
+
+    const setUserOnlineBPEndPoint = "https://dstokesncstudio.com/pokeBackend/api/setOnlineBP.php";
+
+    try {
+        const json = await fetchJSONViaBG(
+            setUserOnlineBPEndPoint,
+            {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "X-Session-User": username // optional if your PHP wants it
+                },
+                body: JSON.stringify({ username, onlineBP })
+            }
+        );
+
+        // Depending on how PHP responds:
+        // e.g. { success: "success", message: "Updated online party" }
+        const data = json.data || json;
+        const ok = data.success;
+        const message = data.message ?? "";
+
+        if (ok === "success" || ok === true) {
+            return { success: true, message };
+        }
+
+        return { success: false, message: message || "Unknown error" };
+
+    } catch (err) {
+        console.error("setOnlineBPDB error:", err);
+        return { success: false, message: err.message || "Network error" };
+    }
+}
+
 /*  ==========MAIN INIT==========
 */
 async function init() {
@@ -3888,14 +3960,12 @@ async function init() {
         title: "Moves",
         onClick: () => openMoveTutor(),
     });
-
     addHeaderButton("secondary", {
         id: "btnOnlineBattle",
         text: "⚔️ Online Battle",
         title: "Online Battle",
         onClick: openOnlineBattleView,
     });
-
     addHeaderButton("secondary", {
         id: "btnParty",
         text: "🎒 Party",
@@ -3908,7 +3978,6 @@ async function init() {
         title: "Buy items",
         onClick: openStore
     });
-
     // Fill secondary menu (Pokédex, Reset)
     addHeaderButton("secondary", {
         id: "btnPokedex",
@@ -4033,6 +4102,18 @@ async function init() {
     $("#btnStartBattle")?.addEventListener("click", startBattle);
     document.getElementById("btnFindMatch")?.addEventListener("click", () => {
         const timerLabel = document.getElementById("turnTimerLabel");
+        setOnlineBPDB()
+            .then(result => {
+                if (result.success) {
+                    console.log("Online BP saved:", result.message);
+                } else {
+                    console.warn("Failed to save Online BP:", result.message);
+                }
+            })
+            .catch(err => {
+                console.error("Unexpected error in setOnlineBPDB:", err);
+            });
+
         // Update timer label periodically
         setInterval(() => {
             if (!timerLabel) return;
