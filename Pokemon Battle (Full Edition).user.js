@@ -4,7 +4,7 @@
 // @connect     pokeapi.co
 // @connect     dstokesncstudio.com
 // @namespace   dstokesncstudio.com
-// @version     4.6.0.2
+// @version     4.6.0.5
 // @updateURL   https://raw.githubusercontent.com/D-Stokes-NC-Gaming-Studio/pokemon-tampermonkey/main/Pokemon%20Battle%20(Full%20Edition).user.js
 // @downloadURL https://raw.githubusercontent.com/D-Stokes-NC-Gaming-Studio/pokemon-tampermonkey/main/Pokemon%20Battle%20(Full%20Edition).user.js
 // @description Full version with XP, evolution, stats, sound, shop, battles, and walking partner — persistent across sites.
@@ -2187,6 +2187,86 @@ button .badge.bg-danger { animation: pulseBadge 1.2s infinite; position: relativ
     GM_setValue(STORAGE.pokedex, JSON.stringify(entries));
     console.log("✅ Pokédex upgrade complete");
   }
+  // ---------- Trainer name (4.6): chosen once at the start, locked afterwards ----------
+  // Changing it later costs one Name Token (stored in pkm_name_tokens; add some with pkmAddNameTokens(n)).
+  /** True once the player has chosen their trainer name. Older saves that already use a custom name count as chosen. */
+  function pkmTrainerNameSet() {
+    if (GM_getValue("pkm_trainer_name_set", false) === true) return true;
+    const n = pkmSafeName(GM_getValue("pkm_trainer_name", ""));
+    if (n && n.toLowerCase() !== "trainer") { GM_setValue("pkm_trainer_name_set", true); return true; }
+    return false;
+  }
+  const pkmNameTokens = () => getInt("pkm_name_tokens");
+  const pkmAddNameTokens = (n = 1) => setInt("pkm_name_tokens", Math.max(0, pkmNameTokens() + Math.floor(Number(n) || 0)));
+  /** Checks a name without saving it. Returns { ok, name, error }. */
+  function pkmCheckTrainerName(raw) {
+    const name = pkmSafeName(raw);
+    if (name.length < 2) return { ok: false, name, error: "Use at least 2 letters or numbers." };
+    if (name.toLowerCase() === "trainer") return { ok: false, name, error: "Please pick a name of your own." };
+    return { ok: true, name, error: "" };
+  }
+  /** The only way to change the trainer name. The first time is free; after that it uses a Name Token. */
+  function pkmSetTrainerName(raw) {
+    const c = pkmCheckTrainerName(raw);
+    if (!c.ok) return c;
+    const had = pkmTrainerNameSet();
+    if (had && c.name === pkmTrainerName()) return { ok: true, name: c.name, error: "" };
+    if (had) {
+      if (pkmNameTokens() <= 0) return { ok: false, name: c.name, error: "Your name is locked. Changing it needs a Name Token." };
+      setInt("pkm_name_tokens", pkmNameTokens() - 1);
+    }
+    GM_setValue("pkm_trainer_name", c.name);
+    GM_setValue("pkm_trainer_name_set", true);
+    if (typeof pkmOnline === "function" && pkmOnline()) {
+      pkmApi("rename", { name: c.name }).then((r) => { const o = pkmOnline(); if (o) { o.name = r.name; pkmSave("pkm_online", o); } }).catch(() => {});
+    }
+    return { ok: true, name: c.name, error: "" };
+  }
+  /** The name field for trainer menus: an input while the player has a Name Token, otherwise a locked display. */
+  function pkmNameFieldHtml(cls = "lk-name") {
+    const n = pkmNameTokens();
+    if (n > 0) return `<label class="lk-l">Trainer name <span class="pkm-dim">(a change uses 1 Name Token, you have ${n})</span> <input class="${cls}" maxlength="14" value="${pkmEsc(pkmTrainerName())}"></label>`;
+    return `<div class="lk-l">Trainer name: <b>${pkmEsc(pkmTrainerName())}</b> 🔒 <span class="pkm-dim">Changing it needs a Name Token.</span></div>`;
+  }
+  let pkmNamePanel = null;
+  function openTrainerName() {
+    if (pkmNamePanel || pkmTrainerNameSet()) return;
+    const P = (pkmNamePanel = document.createElement("div"));
+    P.className = "pkm-panel pkm-modal pkm-set pkm-starter pkm-namepick";
+    P.setAttribute("role", "dialog");
+    P.setAttribute("aria-label", "Choose your trainer name");
+    P.innerHTML = `
+      <div class="pkm-set-head st-head"><span>🧢 Choose your trainer name</span><button type="button" class="pkm-x" data-a="close" aria-label="Close" title="Close (Esc)">✕</button></div>
+      <div class="st-body">
+        <p class="pkm-dim" style="margin:0 0 10px">This is the name other players see in battles, trades and rankings. Pick it carefully: it can't be changed later without a Name Token.</p>
+        <input type="text" class="dex-search st-name-input" maxlength="14" placeholder="Your trainer name" aria-label="Trainer name" autocomplete="off" spellcheck="false" />
+        <div class="st-err" role="alert" hidden></div>
+        <div class="pkm-btns" style="justify-content:flex-end;margin-top:10px"><button type="button" class="pkm-btn2 primary" data-a="confirm">Confirm name</button></div>
+      </div>`;
+    const input = P.querySelector(".st-name-input");
+    const err = P.querySelector(".st-err");
+    const submit = () => {
+      const r = pkmSetTrainerName(input.value);
+      if (!r.ok) { err.textContent = r.error; err.hidden = false; input.focus(); return; }
+      pkmCloseTrainerName();
+      pkmToast(`Nice to meet you, ${r.name}!`);
+      try { renderHeader(); } catch {}
+      if (!pkmHasStarter()) setTimeout(() => openStarter(), 150);
+    };
+    P.onclick = (e) => {
+      const a = e.target.closest("[data-a]")?.dataset.a;
+      if (a === "close") pkmCloseTrainerName();
+      if (a === "confirm") submit();
+    };
+    input.onkeydown = (e) => { if (e.key === "Enter") { e.preventDefault(); submit(); } };
+    pkmMount(P);
+    input.focus({ preventScroll: true });
+  }
+  function pkmCloseTrainerName() {
+    if (pkmNamePanel) pkmNamePanel.remove();
+    pkmNamePanel = null;
+  }
+
   // The 27 starters from the main-series games (Gen 1-9). Each player is offered 3 of them, once.
   const PKM_STARTER_POOL = [
     "bulbasaur", "charmander", "squirtle", "chikorita", "cyndaquil", "totodile", "treecko", "torchic", "mudkip",
@@ -2223,6 +2303,7 @@ button .badge.bg-danger { animation: pulseBadge 1.2s infinite; position: relativ
   async function openStarter() {
     if (starterPanel) return;
     if (pkmHasStarter()) { pkmToast("You already chose your starter. It can't be changed."); return; }
+    if (!pkmTrainerNameSet()) return openTrainerName(); // the name comes first
     const P = (starterPanel = document.createElement("div"));
     P.className = "pkm-panel pkm-modal pkm-set pkm-starter";
     P.setAttribute("role", "dialog");
@@ -2280,6 +2361,9 @@ button .badge.bg-danger { animation: pulseBadge 1.2s infinite; position: relativ
           .reverse()
           .join("")
       : `<div class="pkm-dim">No backups yet.</div>`;
+    const fsId = pkmFirstStarterId();
+    const fsLv = fsId ? Number(((getObj(STORAGE.stats) || {})[fsId] || {}).level) || 1 : 99;
+    const lv5Btn = fsLv < 5 ? `<button type="button" class="pkm-btn2" data-a="starterlv5" title="Raises your first Pokémon to level 5 with the right stats and moves">⭐ Raise starter to level 5</button>` : "";
     const sw = (a, on) => `<input type="checkbox" class="pkm-sw" data-a="${a}" ${on ? "checked" : ""}>`;
     P.innerHTML = `
       <div class="pkm-set-head"><span>⚙️ Settings</span><button type="button" class="pkm-x" data-a="close" title="Close (Esc)" aria-label="Close">✕</button></div>
@@ -2289,7 +2373,7 @@ button .badge.bg-danger { animation: pulseBadge 1.2s infinite; position: relativ
       </div>
       <div class="pkm-set-sec"><h4>Game</h4>
         <label class="pkm-row"><span>Random wild battles</span>${sw("random", randomBattleEnabled)}</label>
-        <div class="pkm-btns"><button type="button" class="pkm-btn2" data-a="upgradeDex">📖 Upgrade Pokédex data</button></div>
+        <div class="pkm-btns">${lv5Btn}<button type="button" class="pkm-btn2" data-a="upgradeDex">📖 Upgrade Pokédex data</button></div>
       </div>
       <div class="pkm-set-sec"><h4>Display</h4>
         <label class="pkm-row"><span>Show HUD <span class="pkm-dim">(partner keeps walking either way)</span></span>${sw("hud", !wrap.classList.contains("pkm-hud-hidden"))}</label>
@@ -2335,6 +2419,13 @@ button .badge.bg-danger { animation: pulseBadge 1.2s infinite; position: relativ
         if (pkmSiteOff()) pkmTurnOffHere(true);
         else renderSettings();
         return;
+      }
+      if (a === "starterlv5") {
+        const r = await pkmStarterToLevel5().catch(() => null);
+        if (!r) pkmToast("Couldn't raise your starter right now. Try again.");
+        else if (!r.changed) pkmToast("Your starter is already level 5 or higher.");
+        else pkmToast(`⭐ Your starter is now level ${r.to}${r.learned.length ? ` and learned ${r.learned.map(pkmStarterCap).join(", ")}` : ""}.`, 5000);
+        return renderSettings();
       }
       if (a === "backup") { pkmBackupNow("manual"); pkmToast("Backup saved"); return renderSettings(); }
       if (a === "restore") {
@@ -2402,6 +2493,79 @@ button .badge.bg-danger { animation: pulseBadge 1.2s infinite; position: relativ
       console.warn(err);
     }
   }
+  // ---------- Level helper (4.6): raise one of your Pokémon to a level, with everything kept consistent ----------
+  /**
+   * Raises a party Pokémon to `level` (never lowers). It fixes everything that depends on level:
+   * XP resets, HP/ATK/DEF/SP.ATK/SP.DEF/SPEED are recalculated from base stats + IV + nature, HP is full,
+   * level-up moves from the missed levels are learned (up to 4; extras wait in "can learn"), and the Pokédex entry is updated.
+   * Returns { changed, from, to, learned, pending } or null if the Pokémon or its data isn't available.
+   */
+  async function pkmSetPokemonLevel(id, level = 5) {
+    level = Math.min(MAX_LEVEL, Math.max(1, Math.floor(Number(level) || 1)));
+    const party = getObj(STORAGE.party) || {};
+    const pm = party[id];
+    if (!pm) return null;
+    const all0 = getObj(STORAGE.stats) || {};
+    const s0 = all0[id] || { xp: 0, level: 1 };
+    const from = Math.max(1, Number(s0.level) || 1);
+    if (from >= level) return { changed: false, from, to: from, learned: [], pending: [] };
+    const d = await pkmPokemonData(pm.name);
+    if (!d) return null;
+    // 1. level + XP, then recalculate every stat the same way battles do (also fills nature, ability, friendship, types)
+    s0.level = level;
+    s0.xp = 0;
+    all0[id] = s0;
+    setObj(STORAGE.stats, all0);
+    await pkmSyncStats(id, pm.name);
+    const all = getObj(STORAGE.stats) || {};
+    const s = all[id] || s0;
+    s.level = level;
+    s.xp = 0;
+    s.currentHP = s.hp; // full health after the conversion
+    // 2. moves: learn what the missed levels teach, exactly like a normal level-up does
+    const learned = [];
+    const pending = [];
+    if (Array.isArray(s.moves) && s.moves.length) {
+      const names = s.moves.slice(0, 4);
+      const fresh = [...new Set((d._lv || []).filter(([n, l]) => l > (s.movesLv || 0) && l <= level && !names.includes(n)).map(([n]) => n))];
+      for (const mv of await pkmMovesByNames(fresh)) {
+        if (names.length < 4) { names.push(mv.name); learned.push(mv.name); } else pending.push(mv.name);
+      }
+      s.moves = names;
+    } else {
+      s.moves = (await pkmPickMoves(d, level)).map((x) => x.name);
+    }
+    s.movesLv = level;
+    if (pending.length) s.movesPending = [...new Set([...(s.movesPending || []), ...pending])];
+    all[id] = s;
+    setObj(STORAGE.stats, all);
+    // 3. Pokédex entry (level, XP and HP shown there)
+    try {
+      const entries = getArr(STORAGE.pokedex);
+      const e = entries.find((p) => String(p.name || "").toLowerCase() === String(pm.name).toLowerCase());
+      if (e && (e.level || 1) < level) {
+        Object.assign(e, { level, xp: 0, hp: s.hp, currentHP: s.hp });
+        GM_setValue(STORAGE.pokedex, JSON.stringify(entries));
+      }
+    } catch {}
+    try { updateHeaderHP(); renderHeader(); } catch {}
+    return { changed: true, from, to: level, learned, pending };
+  }
+  /** The Pokémon you started with: the one recorded when you picked it, else the oldest one in your party. */
+  function pkmFirstStarterId() {
+    const party = getObj(STORAGE.party) || {};
+    const rec = GM_getValue("pkm_first_starter_id", "");
+    if (rec && party[rec]) return rec;
+    let best = null;
+    for (const [id, p] of Object.entries(party)) if (p && p.caughtAt && (!best || p.caughtAt < party[best].caughtAt)) best = id;
+    return best;
+  }
+  /** Raises your starter to level 5 (only if it's still lower). Safe to run more than once. */
+  async function pkmStarterToLevel5() {
+    const id = pkmFirstStarterId();
+    return id ? pkmSetPokemonLevel(id, 5) : null;
+  }
+
   function pickStarter(name, restored) {
     if (!PKM_STARTER_POOL.includes(name) || pkmHasStarter()) return closeStarter();
     // Unique instance ID for this starter
@@ -2414,9 +2578,15 @@ button .badge.bg-danger { animation: pulseBadge 1.2s infinite; position: relativ
     // Set as active Pokémon (instance-based) and load it
     GM_setValue("pkm_starter_id", id);
     GM_setValue(STORAGE.starter, name);
-    fetchPartner(id);
+    GM_setValue("pkm_first_starter_id", id);
     closeStarter();
     renderHeader();
+    // Starters begin at level 5: fix stats and moves first, then load the partner
+    (async () => {
+      try { await pkmSetPokemonLevel(id, 5); } catch (e) { console.warn("Starter level-up failed:", e); }
+      try { await fetchPartner(id); } catch (e) { console.warn(e); }
+      renderHeader();
+    })();
     // Tell the server so reinstalling the script gives the same starter back
     if (!restored) pkmApi("starter_pick", { species: name }, {}).catch(() => {});
   }
@@ -8779,7 +8949,7 @@ button .badge.bg-danger {
       P.setAttribute("role", "dialog");
       P.setAttribute("aria-label", "Link and gifts");
       P.onclick = pkmLinkClick;
-      P.onchange = (e) => { if (e.target.matches(".lk-name")) { GM_setValue("pkm_trainer_name", pkmSafeName(e.target.value) || "Trainer"); pkmLinkMsg = "Name saved."; pkmDrawLink(); } };
+      P.onchange = (e) => { if (e.target.matches(".lk-name")) { const r = pkmSetTrainerName(e.target.value); pkmLinkMsg = r.ok ? "Name saved." : r.error; pkmDrawLink(); } };
       pkmMount(P);
     }
     pkmDrawLink();
@@ -8792,7 +8962,7 @@ button .badge.bg-danger {
     let body = "";
     if (pkmLinkTab === "battle") {
       body = `<p class="pkm-dim">Share your team code with a friend. Paste theirs to battle their team (their saved moves, natures and items). Friend battles give no coins or XP.</p>
-        <label class="lk-l">Your trainer name <input class="lk-name" maxlength="14" value="${pkmEsc(pkmTrainerName())}"></label>
+        ${pkmNameFieldHtml("lk-name")}
         <label class="lk-l">Your team code <textarea class="lk-out" readonly rows="3" aria-label="Your team code">${pkmEsc(pkmTeamCode())}</textarea></label>
         <div class="pkm-btns"><button type="button" class="pkm-btn2" data-a="copy-team">📋 Copy my team code</button></div>
         <label class="lk-l">Friend's team code <textarea class="lk-friend" rows="3" placeholder="PKT1.…" aria-label="Friend's team code">${pkmEsc(keep.team)}</textarea></label>
@@ -9238,6 +9408,9 @@ button .badge.bg-danger {
       "🔰 New trainers are offered 3 random starters from the main games (Bulbasaur to Quaxly) instead of the whole Pokédex.",
       "🔒 Your starter choice is final: the three are saved so you can't re-roll, and the Change starter button is gone.",
       "🌐 With the game server on, reinstalling the script gives you the same three starters (and your pick) back.",
+      "⭐ Your starter now begins at level 5 instead of level 1, with the right stats and moves.",
+      "⭐ Already started at level 1? Settings → Game has a Raise starter to level 5 button (only shows while your first Pokémon is under level 5).",
+      "🧢 New trainers choose their trainer name first. The name is locked afterwards; changing it will need a Name Token.",
       "🎨 The starter menu now looks like the other menus, with sprites and a header bar."
     ]],
     ["4.5", "Quick match, guild shop, bonus pass & more", [
@@ -12441,7 +12614,7 @@ button .badge.bg-danger {
       el.onclick = (e) => {
         const a = e.target.closest("[data-u]")?.dataset.u;
         if (!a) return;
-        if (a === "go") window.open(cfg.DOWNLOAD_URL, "_blank");
+        if (a === "go") { window.open(cfg.DOWNLOAD_URL, "_blank"); pkmToast("Install it in the Tampermonkey tab that just opened, then refresh this page.", 9000); }
         if (a === "new") pkmOpenOptions("new");
         if (a === "later" || a === "go") GM_setValue("pkm_update_dismissed", v);
         el.remove(); pkmUpdBanner = null;
@@ -13566,11 +13739,10 @@ button .badge.bg-danger {
       if (col) { L.color = +col.dataset.col; pkmSave("pkm_trainer_look", L); return pkmOpenLook(); }
       if (a === "save") {
         const P = pkmLookPanel;
-        const name = pkmSafeName(P.querySelector(".lk-name").value, 16);
-        if (name) GM_setValue("pkm_trainer_name", name);
+        const nameEl = P.querySelector(".lk-name"); // only there while the player has a Name Token
+        if (nameEl) { const r = pkmSetTrainerName(nameEl.value); if (!r.ok) return pkmToast(r.error); }
         L.title = pkmSafeName(P.querySelector(".lk-title").value, 24) || "";
         pkmSave("pkm_trainer_look", L);
-        if (pkmOnline() && name) pkmApi("rename", { name }).then((r) => { const o = pkmOnline(); if (o) { o.name = r.name; pkmSave("pkm_online", o); } }).catch(() => {});
         pkmToast("Trainer look saved.");
         return pkmOpenLook();
       }
@@ -13579,7 +13751,7 @@ button .badge.bg-danger {
     const c = PKM_LOOK_COLORS[L.color] || PKM_LOOK_COLORS[0];
     pkmLookPanel.innerHTML = `${pkmPanelHead("🧢 Trainer look", "tl-head")}<div class="lk-body">
       <div class="tl-preview" style="background:linear-gradient(120deg,${c[1]},${c[2]})"><img src="${PKM_TRAINER_IMG}${pkmEsc(L.sprite)}.png" alt=""><div><b>${pkmEsc(pkmTrainerName())}</b><div>${pkmEsc(L.title || pkmRank().name)}</div></div></div>
-      <div class="pkm-btns"><label class="lk-l">Name <input class="lk-name" maxlength="16" value="${pkmEsc(pkmTrainerName())}"></label><label class="lk-l">Title <input class="lk-title" maxlength="24" placeholder="${pkmEsc(pkmRank().name)}" value="${pkmEsc(L.title)}"></label><button type="button" class="pkm-btn2 primary" data-a="save">Save</button></div>
+      <div class="pkm-btns">${pkmNameFieldHtml("lk-name")}<label class="lk-l">Title <input class="lk-title" maxlength="24" placeholder="${pkmEsc(pkmRank().name)}" value="${pkmEsc(L.title)}"></label><button type="button" class="pkm-btn2 primary" data-a="save">Save</button></div>
       <div class="bag-sec"><span>Card color</span></div>
       <div class="pkm-btns">${PKM_LOOK_COLORS.map((x, i) => `<button type="button" class="tl-col${i === L.color ? " on" : ""}" data-col="${i}" style="background:linear-gradient(120deg,${x[1]},${x[2]})" aria-label="${x[0]}" aria-pressed="${i === L.color}"></button>`).join("")}</div>
       <div class="bag-sec"><span>Outfit</span></div>
@@ -15199,6 +15371,10 @@ button .badge.bg-danger {
   pkmOpenLegends = pkmExclusive("legends", pkmOpenLegends);
   pkmOpenDaycare = pkmExclusive("daycare", pkmOpenDaycare);
   pkmOpenLink = pkmExclusive("link", pkmOpenLink);
+  PKM_PANELS.push(["trainername", () => pkmNamePanel, () => pkmCloseTrainerName()]);
+  openTrainerName = pkmExclusive("trainername", openTrainerName);
+  // Players from before 4.6 who never chose a name are asked once the game has settled
+  setTimeout(() => { try { if (pkmHasStarter() && !pkmTrainerNameSet()) openTrainerName(); } catch {} }, 9000);
   setTimeout(() => { try { pkmCheckAch(); } catch {} }, 4000);
 
   pkmStyle(`
@@ -15213,6 +15389,7 @@ button .badge.bg-danger {
     .st-num{position:absolute;left:8px;top:6px;font-size:.72rem;opacity:.6}
     .st-name{display:block;margin-top:4px;font-weight:700;font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
     .st-note{grid-column:1/-1;padding:10px 2px}
+    .st-err{margin-top:8px;padding:7px 10px;border-radius:9px;background:rgba(224,60,60,.16);border:1px solid rgba(224,60,60,.5);font-size:12.5px}
     .st-three{grid-template-columns:repeat(3,1fr);max-height:none}
     .st-three .st-card{padding:14px 6px}
     .st-three .st-card img{width:96px;height:96px}
@@ -15427,89 +15604,3 @@ button .badge.bg-danger {
     .pkm-set-sec{padding:10px 16px;border-bottom:1px solid rgba(255,255,255,.07)}
     .pkm-set-sec:last-child{border-bottom:0}
     .pkm-set-sec h4{font-size:11px;text-transform:uppercase;letter-spacing:.08em;opacity:.6;margin:0 0 6px;font-weight:700}
-    .pkm-row{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:6px 0;font-size:13px}
-    .pkm-sw{appearance:none;-webkit-appearance:none;width:36px;height:20px;border-radius:999px;background:#3a3f55;position:relative;cursor:pointer;flex:0 0 auto;margin:0;transition:background .15s}
-    .pkm-sw::after{content:"";position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:#fff;transition:left .15s}
-    .pkm-sw:checked{background:#2fbf71}
-    .pkm-sw:checked::after{left:18px}
-    .pkm-sw:focus-visible{outline:2px solid #ffcb05;outline-offset:2px}
-    .pkm-set input[type=range]{width:150px;accent-color:#ffcb05}
-    .pkm-set textarea{width:100%;min-height:90px;background:#0f1220;color:#e8eaf6;border:1px solid #2c3350;border-radius:8px;padding:6px 8px;font:12px ui-monospace,Consolas,monospace;resize:vertical}
-    .pkm-btns{display:flex;flex-wrap:wrap;gap:6px}
-    .pkm-btn2{all:unset;box-sizing:border-box;cursor:pointer;padding:6px 10px;border-radius:8px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.14);font-size:12.5px;color:#e8eaf6;white-space:nowrap}
-    .pkm-btn2:hover{background:rgba(255,255,255,.16)}
-    .pkm-btn2.primary{background:#3c7cff;border-color:#3c7cff;color:#fff}
-    .pkm-btn2.primary:hover{background:#5a92ff}
-    .pkm-btn2.danger{background:rgba(214,40,57,.25);border-color:rgba(214,40,57,.6)}
-    .pkm-btn2[disabled]{opacity:.5;cursor:wait}
-    .pkm-x{all:unset;cursor:pointer;width:28px;height:28px;display:grid;place-items:center;border-radius:7px;color:#fff;font-size:14px}
-    .pkm-x:hover{background:rgba(255,255,255,.2)}
-    .pkm-cmp{width:100%;border-collapse:collapse;font-size:13px;margin:8px 0}
-    .pkm-cmp td,.pkm-cmp th{padding:5px 6px;border-bottom:1px solid rgba(255,255,255,.07);text-align:left}
-    .pkm-cmp th{opacity:.6;font-weight:600}
-    .pkm-cmp .pkm-chg{color:#ffcb05;font-weight:700}
-    /* Pokédex */
-    .dex-head{display:flex;align-items:center;justify-content:space-between;flex:0 0 auto}
-    .dex-head .dex-title{margin:0}
-    .dex-progress{flex:0 0 auto;margin-top:8px}
-    .dex-progress-bar{height:10px;border-radius:999px;background:#10101a;border:1px solid #2b2b3d;overflow:hidden}
-    .dex-progress-bar span{display:block;height:100%;width:0;background:linear-gradient(90deg,#ffcb05,#ff7a00);transition:width .5s}
-    .dex-progress-txt{font-size:12px;opacity:.85;margin-top:4px;display:flex;justify-content:space-between}
-    .dex-filters{display:flex;flex-wrap:wrap;gap:6px;flex:0 0 auto;margin:8px 0}
-    .dex-filters .dex-search{flex:1 1 200px;margin:0!important}
-    .dex-filters select{background:#10101a;color:#fff;border:1px solid #2b2b3d;border-radius:8px;padding:6px 8px}
-    .dex-entry{cursor:pointer}
-    .dex-entry[hidden]{display:none!important}
-    .dex-sprite{height:64px}
-    .dex-entry.missing .dex-sprite img{filter:brightness(0) opacity(.5)!important}
-    .dex-entry.missing .dex-name{opacity:.5}
-    .dex-empty{grid-column:1/-1;text-align:center;opacity:.7;padding:30px}
-    .dex-empty[hidden]{display:none}
-    .pkm-dex-panel .dex-progress,.pkm-dex-panel .dex-filters,.pkm-dex-panel .dex-head{flex:0 0 auto}
-    /* Battle keyboard hints */
-    .pk-btn .pk-key{position:absolute;left:6px;top:4px;font-size:10px;opacity:.5;font-weight:700}
-    @media (prefers-reduced-motion: reduce){
-      .pkm-layer *,.pkm-layer *::before,.pkm-layer *::after{animation:none!important;transition:none!important}
-    }
-  `, "pkm-ui");
-  // Bootstrap is loaded inside the game's shadow root (see top). Nothing is injected into the page.
-  renderHeader();
-  initPartner();
-  setInterval(() => {
-    updatePokeStopTimer();
-    updateNextBattleTimer();
-  }, 1000);
-
-  unsafeWindow.changePokemon = (identifier) => {
-    const party = getObj(STORAGE.party) || {};
-    let id = identifier;
-    let name = null;
-
-    // 🧩 If called with a name instead of an ID, find the first match
-    if (!party[id]) {
-      const found = Object.entries(party).find(
-        ([, entry]) => entry.name.toLowerCase() === identifier.toLowerCase()
-      );
-      if (found) {
-        id = found[0];
-        name = found[1].name;
-      } else {
-        name = identifier;
-      }
-    } else {
-      name = party[id].name;
-    }
-
-    if (!name) {
-      console.warn(`⚠️ changePokemon: Could not find Pokémon "${identifier}".`);
-      return;
-    }
-
-    // ✅ Save current active Pokémon
-    GM_setValue("pkm_starter_id", id);
-    GM_setValue(STORAGE.starter, name);
-
-    // ✅ Fetch and refresh HUD for this instance
-    fetchPartner(id);
-  };
-})();
