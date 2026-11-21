@@ -4,7 +4,7 @@
 // @connect     pokeapi.co
 // @connect     dstokesncstudio.com
 // @namespace   dstokesncstudio.com
-// @version     4.6.0.1
+// @version     4.6.0.2
 // @updateURL   https://raw.githubusercontent.com/D-Stokes-NC-Gaming-Studio/pokemon-tampermonkey/main/Pokemon%20Battle%20(Full%20Edition).user.js
 // @downloadURL https://raw.githubusercontent.com/D-Stokes-NC-Gaming-Studio/pokemon-tampermonkey/main/Pokemon%20Battle%20(Full%20Edition).user.js
 // @description Full version with XP, evolution, stats, sound, shop, battles, and walking partner — persistent across sites.
