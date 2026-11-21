@@ -15604,3 +15604,89 @@ button .badge.bg-danger {
     .pkm-set-sec{padding:10px 16px;border-bottom:1px solid rgba(255,255,255,.07)}
     .pkm-set-sec:last-child{border-bottom:0}
     .pkm-set-sec h4{font-size:11px;text-transform:uppercase;letter-spacing:.08em;opacity:.6;margin:0 0 6px;font-weight:700}
+    .pkm-row{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:6px 0;font-size:13px}
+    .pkm-sw{appearance:none;-webkit-appearance:none;width:36px;height:20px;border-radius:999px;background:#3a3f55;position:relative;cursor:pointer;flex:0 0 auto;margin:0;transition:background .15s}
+    .pkm-sw::after{content:"";position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:#fff;transition:left .15s}
+    .pkm-sw:checked{background:#2fbf71}
+    .pkm-sw:checked::after{left:18px}
+    .pkm-sw:focus-visible{outline:2px solid #ffcb05;outline-offset:2px}
+    .pkm-set input[type=range]{width:150px;accent-color:#ffcb05}
+    .pkm-set textarea{width:100%;min-height:90px;background:#0f1220;color:#e8eaf6;border:1px solid #2c3350;border-radius:8px;padding:6px 8px;font:12px ui-monospace,Consolas,monospace;resize:vertical}
+    .pkm-btns{display:flex;flex-wrap:wrap;gap:6px}
+    .pkm-btn2{all:unset;box-sizing:border-box;cursor:pointer;padding:6px 10px;border-radius:8px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.14);font-size:12.5px;color:#e8eaf6;white-space:nowrap}
+    .pkm-btn2:hover{background:rgba(255,255,255,.16)}
+    .pkm-btn2.primary{background:#3c7cff;border-color:#3c7cff;color:#fff}
+    .pkm-btn2.primary:hover{background:#5a92ff}
+    .pkm-btn2.danger{background:rgba(214,40,57,.25);border-color:rgba(214,40,57,.6)}
+    .pkm-btn2[disabled]{opacity:.5;cursor:wait}
+    .pkm-x{all:unset;cursor:pointer;width:28px;height:28px;display:grid;place-items:center;border-radius:7px;color:#fff;font-size:14px}
+    .pkm-x:hover{background:rgba(255,255,255,.2)}
+    .pkm-cmp{width:100%;border-collapse:collapse;font-size:13px;margin:8px 0}
+    .pkm-cmp td,.pkm-cmp th{padding:5px 6px;border-bottom:1px solid rgba(255,255,255,.07);text-align:left}
+    .pkm-cmp th{opacity:.6;font-weight:600}
+    .pkm-cmp .pkm-chg{color:#ffcb05;font-weight:700}
+    /* Pokédex */
+    .dex-head{display:flex;align-items:center;justify-content:space-between;flex:0 0 auto}
+    .dex-head .dex-title{margin:0}
+    .dex-progress{flex:0 0 auto;margin-top:8px}
+    .dex-progress-bar{height:10px;border-radius:999px;background:#10101a;border:1px solid #2b2b3d;overflow:hidden}
+    .dex-progress-bar span{display:block;height:100%;width:0;background:linear-gradient(90deg,#ffcb05,#ff7a00);transition:width .5s}
+    .dex-progress-txt{font-size:12px;opacity:.85;margin-top:4px;display:flex;justify-content:space-between}
+    .dex-filters{display:flex;flex-wrap:wrap;gap:6px;flex:0 0 auto;margin:8px 0}
+    .dex-filters .dex-search{flex:1 1 200px;margin:0!important}
+    .dex-filters select{background:#10101a;color:#fff;border:1px solid #2b2b3d;border-radius:8px;padding:6px 8px}
+    .dex-entry{cursor:pointer}
+    .dex-entry[hidden]{display:none!important}
+    .dex-sprite{height:64px}
+    .dex-entry.missing .dex-sprite img{filter:brightness(0) opacity(.5)!important}
+    .dex-entry.missing .dex-name{opacity:.5}
+    .dex-empty{grid-column:1/-1;text-align:center;opacity:.7;padding:30px}
+    .dex-empty[hidden]{display:none}
+    .pkm-dex-panel .dex-progress,.pkm-dex-panel .dex-filters,.pkm-dex-panel .dex-head{flex:0 0 auto}
+    /* Battle keyboard hints */
+    .pk-btn .pk-key{position:absolute;left:6px;top:4px;font-size:10px;opacity:.5;font-weight:700}
+    @media (prefers-reduced-motion: reduce){
+      .pkm-layer *,.pkm-layer *::before,.pkm-layer *::after{animation:none!important;transition:none!important}
+    }
+  `, "pkm-ui");
+  // Bootstrap is loaded inside the game's shadow root (see top). Nothing is injected into the page.
+  renderHeader();
+  initPartner();
+  setInterval(() => {
+    updatePokeStopTimer();
+    updateNextBattleTimer();
+  }, 1000);
+
+  unsafeWindow.changePokemon = (identifier) => {
+    const party = getObj(STORAGE.party) || {};
+    let id = identifier;
+    let name = null;
+
+    // 🧩 If called with a name instead of an ID, find the first match
+    if (!party[id]) {
+      const found = Object.entries(party).find(
+        ([, entry]) => entry.name.toLowerCase() === identifier.toLowerCase()
+      );
+      if (found) {
+        id = found[0];
+        name = found[1].name;
+      } else {
+        name = identifier;
+      }
+    } else {
+      name = party[id].name;
+    }
+
+    if (!name) {
+      console.warn(`⚠️ changePokemon: Could not find Pokémon "${identifier}".`);
+      return;
+    }
+
+    // ✅ Save current active Pokémon
+    GM_setValue("pkm_starter_id", id);
+    GM_setValue(STORAGE.starter, name);
+
+    // ✅ Fetch and refresh HUD for this instance
+    fetchPartner(id);
+  };
+})();
