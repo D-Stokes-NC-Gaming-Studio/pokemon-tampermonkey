@@ -2,9 +2,11 @@
 // @name        Pokemon Battle (Full Edition)
 // @author      JellxWrld(@diedrchr), DStokesNCStudio9@esrobbie)
 // @connect     pokeapi.co
-// @connect     https://dstokesncstudio.com/pokeapi/pokeapi.php
+// @connect     dstokesncstudio.com
 // @namespace   dstokesncstudio.com
-// @version     4.0.0.0
+// @version     4.6.0.0
+// @updateURL   https://raw.githubusercontent.com/D-Stokes-NC-Gaming-Studio/pokemon-tampermonkey/main/Pokemon%20Battle%20(Full%20Edition).user.js
+// @downloadURL https://raw.githubusercontent.com/D-Stokes-NC-Gaming-Studio/pokemon-tampermonkey/main/Pokemon%20Battle%20(Full%20Edition).user.js
 // @description Full version with XP, evolution, stats, sound, shop, battles, and walking partner — persistent across sites.
 // @include     *
 // @grant       GM.xmlHttpRequest
@@ -624,7 +626,7 @@ button .badge.bg-danger { animation: pulseBadge 1.2s infinite; position: relativ
   // further down (STORAGE / getInt / setObj ...). This class used to keep a second, out-of-date copy.
   class Configs {
     constructor(
-      url = "https://raw.githubusercontent.com/D-Stokes-NC-Gaming-Studio/pokemon-tampermonkey/main/Pokemon%20Battle%20(Full%20Edition)-1.0.user.js",
+      url = "https://raw.githubusercontent.com/D-Stokes-NC-Gaming-Studio/pokemon-tampermonkey/main/Pokemon%20Battle%20(Full%20Edition).user.js",
       currentVersion = typeof GM_info !== "undefined" && GM_info?.script?.version ? GM_info.script.version : "0.0.0"
     ) {
       this.DOWNLOAD_URL = url;
@@ -675,15 +677,9 @@ button .badge.bg-danger { animation: pulseBadge 1.2s infinite; position: relativ
     }
 
     promptUpdate(remoteVersion) {
-      if (GM_getValue("pkm_update_prompted", "") === remoteVersion) return;   // asked about this version already
-      GM_setValue("pkm_update_prompted", remoteVersion);
-      if (
-        confirm(
-          `⚡ New version available (${remoteVersion}). Open download page?`
-        )
-      ) {
-        window.open(this.configs.DOWNLOAD_URL, "_blank");
-      }
+      // A banner in the game (set up later, once the UI exists) instead of a blocking confirm() box.
+      GM_setValue("pkm_update_remote", remoteVersion);
+      if (typeof pkmUpdateNotice === "function") pkmUpdateNotice(remoteVersion);
     }
 
     async needsUpdate() {
@@ -696,9 +692,9 @@ button .badge.bg-danger { animation: pulseBadge 1.2s infinite; position: relativ
       );
     }
 
-    async fetchRemoteVersion(url) {
-      // Cached for 6 hours: this used to download the whole script on every HUD redraw.
-      try { const c = JSON.parse(GM_getValue("pkm_update_cache", "{}")); if (c.url === url && Date.now() - c.t < 6 * 3600e3) return c.v; } catch {}
+    async fetchRemoteVersion(url, force = false) {
+      // Cached for 1 hour: this used to download the whole script on every HUD redraw. "force" skips the cache (Check now button).
+      try { const c = JSON.parse(GM_getValue("pkm_update_cache", "{}")); if (!force && c.url === url && Date.now() - c.t < 3600e3) return c.v; } catch {}
       const v = await this._fetchRemoteVersion(url);
       if (v) GM_setValue("pkm_update_cache", JSON.stringify({ url, t: Date.now(), v }));
       return v;
@@ -2189,57 +2185,67 @@ button .badge.bg-danger { animation: pulseBadge 1.2s infinite; position: relativ
     GM_setValue(STORAGE.pokedex, JSON.stringify(entries));
     console.log("✅ Pokédex upgrade complete");
   }
+  // The 27 starters from the main-series games (Gen 1-9). Each player is offered 3 of them, once.
+  const PKM_STARTER_POOL = [
+    "bulbasaur", "charmander", "squirtle", "chikorita", "cyndaquil", "totodile", "treecko", "torchic", "mudkip",
+    "turtwig", "chimchar", "piplup", "snivy", "tepig", "oshawott", "chespin", "fennekin", "froakie",
+    "rowlet", "litten", "popplio", "grookey", "scorbunny", "sobble", "sprigatito", "fuecoco", "quaxly",
+  ];
+  const PKM_STARTER_DEX = { bulbasaur: 1, charmander: 4, squirtle: 7, chikorita: 152, cyndaquil: 155, totodile: 158, treecko: 252, torchic: 255, mudkip: 258, turtwig: 387, chimchar: 390, piplup: 393, snivy: 495, tepig: 498, oshawott: 501, chespin: 650, fennekin: 653, froakie: 656, rowlet: 722, litten: 725, popplio: 728, grookey: 810, scorbunny: 813, sobble: 816, sprigatito: 906, fuecoco: 909, quaxly: 912 };
+  const pkmStarterOk = (a) => Array.isArray(a) && a.length === 3 && new Set(a).size === 3 && a.every((n) => PKM_STARTER_POOL.includes(n));
+  function pkmLocalTrio() {
+    const pool = PKM_STARTER_POOL.slice();
+    const out = [];
+    while (out.length < 3) out.push(pool.splice(Math.floor(Math.random() * pool.length), 1)[0]);
+    return out;
+  }
+  /** The player's 3 starters. Saved on first roll so closing the menu never re-rolls. The server (if reachable) decides it by connection, so reinstalling gives the same three. */
+  async function pkmGetStarterTrio() {
+    let trio = null;
+    try { trio = JSON.parse(GM_getValue("pkm_starter_trio", "null")); } catch {}
+    if (pkmStarterOk(trio)) return { trio, chosen: "" };
+    let chosen = "";
+    try {
+      const r = await Promise.race([pkmApi("starter_get", {}, {}), new Promise((_, rej) => setTimeout(() => rej(new Error("slow")), 6000))]);
+      if (pkmStarterOk(r.trio)) { trio = r.trio; if (PKM_STARTER_POOL.includes(r.chosen)) chosen = r.chosen; }
+    } catch {}
+    if (!pkmStarterOk(trio)) trio = pkmLocalTrio();
+    GM_setValue("pkm_starter_trio", JSON.stringify(trio));
+    return { trio, chosen };
+  }
+  const pkmHasStarter = () => { const id = GM_getValue("pkm_starter_id"); const p = getObj(STORAGE.party) || {}; return !!(id && p[id]); };
+
   // === Starter Selection ===
+  const pkmStarterCap = (s) => (s ? s[0].toUpperCase() + s.slice(1) : s);
   let starterPanel;
-  function openStarter() {
+  async function openStarter() {
     if (starterPanel) return;
-    starterPanel = document.createElement("div");
-    Object.assign(starterPanel.style, {
-      position: "fixed",
-      top: "50%",
-      left: "50%",
-      transform: "translate(-50%, -50%)",
-      background: "#fff",
-      color: "#000",
-      padding: "12px",
-      border: "2px solid black",
-      zIndex: "10000",
-      maxHeight: "80vh",
-      overflowY: "auto",
-      width: "320px",
-    });
-    pkmMount(starterPanel);
-
-    // Add search input
-    const search = document.createElement("input");
-    search.type = "text";
-    search.placeholder = "Search Pokémon...";
-    Object.assign(search.style, {
-      width: "100%",
-      padding: "6px",
-      marginBottom: "8px",
-      fontSize: "16px",
-      boxSizing: "border-box",
-    });
-    starterPanel.appendChild(search);
-
-    // List container
-    const list = document.createElement("div");
-    starterPanel.appendChild(list);
-
-    pkmFetch("https://pokeapi.co/api/v2/pokemon?limit=1010")
-      .then((res) => res.json())
-      .then((data) => {
-        const names = data.results.map((p) => p.name);
-        renderFilteredList(names, list, search);
-        search.addEventListener("input", () =>
-          renderFilteredList(names, list, search)
-        );
-      });
-
-    const cancel = createButton("🚫 Cancel", closeStarter, "btn btn-success");
-    cancel.style.marginTop = "10px";
-    starterPanel.appendChild(cancel);
+    if (pkmHasStarter()) { pkmToast("You already chose your starter. It can't be changed."); return; }
+    const P = (starterPanel = document.createElement("div"));
+    P.className = "pkm-panel pkm-modal pkm-set pkm-starter";
+    P.setAttribute("role", "dialog");
+    P.setAttribute("aria-label", "Choose your starter");
+    P.innerHTML = `
+      <div class="pkm-set-head st-head"><span>🔰 Choose your starter</span><button type="button" class="pkm-x" data-a="close" aria-label="Close" title="Close (Esc)">✕</button></div>
+      <div class="st-body"><div class="st-grid st-three"><div class="pkm-dim st-note">Finding your starters…</div></div></div>`;
+    const grid = P.querySelector(".st-grid");
+    P.onclick = (e) => {
+      if (e.target.closest('[data-a="close"]')) return closeStarter();
+      const card = e.target.closest(".st-card");
+      if (card) pickStarter(card.dataset.n);
+    };
+    pkmMount(P);
+    const { trio, chosen } = await pkmGetStarterTrio();
+    if (starterPanel !== P) return;
+    if (chosen) { // this connection already picked one before (for example the script was reinstalled)
+      pkmToast(`Welcome back! Your starter is ${pkmStarterCap(chosen)}.`);
+      return pickStarter(chosen, true);
+    }
+    const SIL = "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/";
+    grid.innerHTML =
+      trio.map((n) => `<button type="button" class="st-card" data-n="${pkmEsc(n)}" aria-label="${pkmEsc(pkmStarterCap(n))}"><span class="st-num">#${PKM_STARTER_DEX[n]}</span><img src="${SIL}${PKM_STARTER_DEX[n]}.png" alt="" decoding="async"/><span class="st-name">${pkmEsc(pkmStarterCap(n))}</span></button>`).join("") +
+      `<div class="pkm-dim st-note st-more">These three were picked for you. Your choice is final, so choose carefully.</div>`;
+    grid.querySelector(".st-card")?.focus({ preventScroll: true });
   }
 
   let settingsPanel;
@@ -2281,7 +2287,7 @@ button .badge.bg-danger { animation: pulseBadge 1.2s infinite; position: relativ
       </div>
       <div class="pkm-set-sec"><h4>Game</h4>
         <label class="pkm-row"><span>Random wild battles</span>${sw("random", randomBattleEnabled)}</label>
-        <div class="pkm-btns"><button type="button" class="pkm-btn2" data-a="starter">🔄 Change starter</button><button type="button" class="pkm-btn2" data-a="upgradeDex">📖 Upgrade Pokédex data</button></div>
+        <div class="pkm-btns"><button type="button" class="pkm-btn2" data-a="upgradeDex">📖 Upgrade Pokédex data</button></div>
       </div>
       <div class="pkm-set-sec"><h4>Display</h4>
         <label class="pkm-row"><span>Show HUD <span class="pkm-dim">(partner keeps walking either way)</span></span>${sw("hud", !wrap.classList.contains("pkm-hud-hidden"))}</label>
@@ -2314,7 +2320,6 @@ button .badge.bg-danger { animation: pulseBadge 1.2s infinite; position: relativ
       if (!el) return;
       const a = el.dataset.a;
       if (a === "close") return closeSettings();
-      if (a === "starter") return openStarter();
       if (a === "upgradeDex") {
         el.disabled = true;
         el.textContent = "Upgrading…";
@@ -2395,62 +2400,23 @@ button .badge.bg-danger { animation: pulseBadge 1.2s infinite; position: relativ
       console.warn(err);
     }
   }
-  function renderFilteredList(names, container, searchEl) {
-    const filter = searchEl.value.trim().toLowerCase();
-    container.innerHTML = "";
-
-    // ✅ Filter results by name (case-insensitive) and limit for performance
-    const filtered = names
-      .filter((n) => n.toLowerCase().includes(filter))
-      .slice(0, 50);
-
-    if (filtered.length === 0) {
-      const noRes = document.createElement("div");
-      noRes.textContent = "No Pokémon found.";
-      noRes.style.opacity = "0.7";
-      noRes.style.marginTop = "8px";
-      container.appendChild(noRes);
-      return;
+  function pickStarter(name, restored) {
+    if (!PKM_STARTER_POOL.includes(name) || pkmHasStarter()) return closeStarter();
+    // Unique instance ID for this starter
+    const id = generateUniqueId(name);
+    const party = getObj(STORAGE.party) || {};
+    if (!party[id]) {
+      party[id] = { name, caughtAt: Date.now() };
+      setObj(STORAGE.party, party);
     }
-
-    for (const name of filtered) {
-      const displayName = name[0].toUpperCase() + name.slice(1);
-
-      const btn = createButton(
-        displayName,
-        () => {
-          // ✅ Generate a unique instance ID for this starter
-          const id = generateUniqueId(name);
-
-          // Create new party entry if not exists
-          const party = getObj(STORAGE.party) || {};
-          if (!party[id]) {
-            party[id] = {
-              name,
-              caughtAt: Date.now(),
-            };
-            setObj(STORAGE.party, party);
-          }
-
-          // ✅ Set as active Pokémon (instance-based)
-          GM_setValue("pkm_starter_id", id);
-          GM_setValue(STORAGE.starter, name);
-
-          // ✅ Load it immediately
-          fetchPartner(id);
-
-          // ✅ Close the starter selection UI
-          closeStarter();
-
-          // ✅ Refresh header UI
-          renderHeader();
-        },
-        "btn btn-success"
-      );
-
-      btn.style.margin = "2px";
-      container.appendChild(btn);
-    }
+    // Set as active Pokémon (instance-based) and load it
+    GM_setValue("pkm_starter_id", id);
+    GM_setValue(STORAGE.starter, name);
+    fetchPartner(id);
+    closeStarter();
+    renderHeader();
+    // Tell the server so reinstalling the script gives the same starter back
+    if (!restored) pkmApi("starter_pick", { species: name }, {}).catch(() => {});
   }
 
   function closeStarter() {
@@ -4621,54 +4587,108 @@ button .badge.bg-danger {
     pkmLauncher.setAttribute("aria-expanded", String(open));
     if (!open) { pkmMenu.hidden = true; return; }
     const hudHidden = wrap.classList.contains("pkm-hud-hidden");
-    const items = [
-      ["⚔️", "Battle", () => openBattle()],
-      ["🧢", "Trainers & Gyms", () => pkmOpenTrainers()],
-      ["📍", "PokéStop", () => openPokeStop()],
-      ["❤️", `Pokémon Center (${POKE_CENTER_COST})`, () => pokeCenter()],
-      ["🛒", "Shop", () => openShop()],
-      ["🎒", "Bag", () => openBag()],
-      ["📖", "Pokédex", () => openPokedex()],
-      ["🏅", "Badges & stats", () => pkmOpenBadges()],
-      ["🎁", "Daily reward", () => pkmOpenDaily()],
-      ["📋", "Daily quests", () => pkmOpenBadges("quests")],
-      ["🗺️", "World map", () => pkmOpenMap()],
-      ["🌴", "Safari Zone", () => pkmOpenSafari()],
-      ["🗼", "Battle Tower", () => pkmOpenTower()],
-      ["🌟", "Legendary hunt", () => pkmOpenLegends()],
-      ["🥚", "Daycare & Eggs", () => pkmOpenDaycare()],
-      ["🏋️", "Training center", () => pkmOpenTraining()],
-      ["🎓", "Move tutor & TMs", () => pkmOpenTutor()],
-      ["📦", "Box tools (sort, release)", () => pkmOpenBox()],
-      ["🛠️", "Crafting bench", () => pkmOpenCraft()],
-      ["🪜", "Weekly ladder", () => pkmOpenLadder()],
-      ["🎯", "Type specialist", () => pkmOpenTypeChal()],
-      ["🌀", "Mystery Dungeon", () => pkmOpenDungeon()],
-      ["🏟️", "Battle Frontier", () => pkmOpenFrontier()],
-      ["💥", "Raid den", () => pkmOpenRaids()],
-      ["🍓", "Berry garden", () => pkmOpenGarden()],
-      ["🎀", "Contests", () => pkmOpenContests()],
-      ["📖", "Story", () => pkmOpenStory()],
-      ["🔗", "Link & gifts", () => pkmOpenLink()],
-      ["📖", "Pokédex prizes", () => pkmOpenBadges("dex")],
-      null,
-      [hudHidden ? "👁️" : "🙈", hudHidden ? "Show HUD" : "Hide HUD", () => pkmSetHudHidden(!hudHidden, false)],
-      ["📌", "Reset HUD position", () => pkmResetHud()],
-      ["🛠️", "Options & tools", () => pkmOpenOptions()],
-      ["⚙️", "Settings", () => openSettings()],
-      ["⏸️", `Turn off on ${location.hostname}`, () => pkmTurnOffHere()],
+    // 4.1: the menu is a side panel with groups and a search box, so it fits on small screens.
+    const groups = [
+      ["⚔️ Play", [
+        ["⚔️", "Battle", () => openBattle()],
+        ["🏅", "Trainers & Gyms", () => pkmOpenTrainers()],
+        ["🗺️", "World map", () => pkmOpenMap()],
+        ["🦒", "Safari Zone", () => pkmOpenSafari()],
+        ["🗺️", "Habitat map", () => pkmOpenHabitats()],
+        ["🌀", "Ultra Wormholes", () => pkmOpenWormholes()],
+        ["🦹", "Villain teams", () => pkmOpenVillains()],
+        ["🕳️", "Mystery Dungeon", () => pkmOpenDungeon()],
+        ["🔥", "Raid den", () => pkmOpenRaids()],
+        ["📖", "Story", () => pkmOpenStory()],
+      ]],
+      ["🎒 Pokémon", [
+        ["🎒", "Bag", () => openBag()],
+        ["📕", "Pokédex", () => openPokedex()],
+        ["🏥", `Pokémon Center (${POKE_CENTER_COST})`, () => pokeCenter()],
+        ["🥚", "Daycare & Eggs", () => pkmOpenDaycare()],
+        ["⛺", "Pokémon Camp", () => pkmOpenCamp()],
+        ["🏋️", "Training center", () => pkmOpenTraining()],
+        ["💿", "Move tutor & TMs", () => pkmOpenTutor()],
+        ["📦", "Box tools", () => pkmOpenBox()],
+        ["🪦", "Nuzlocke & graveyard", () => pkmOpenNuzlocke()],
+      ]],
+      ["🏆 Challenges", [
+        ["🗼", "Battle Tower", () => pkmOpenTower()],
+        ["🏟️", "Battle Frontier", () => pkmOpenFrontier()],
+        ["📈", "Weekly ladder", () => pkmOpenLadder()],
+        ["🎯", "Type specialist", () => pkmOpenTypeChal()],
+        ["🌟", "Legendary hunt", () => pkmOpenLegends()],
+        ["🎀", "Contests", () => pkmOpenContests()],
+      ]],
+      ["🛒 Shop & rewards", [
+        ["🛒", "Shop", () => openShop()],
+        ["📍", "PokéStop", () => openPokeStop()],
+        ["🎁", "Daily reward", () => pkmOpenDaily()],
+        ["📋", "Daily quests", () => pkmOpenBadges("quests")],
+        ["🏵️", "Pokédex prizes", () => pkmOpenBadges("dex")],
+        ["🛠️", "Crafting bench", () => pkmOpenCraft()],
+        ["🫐", "Berry garden", () => pkmOpenGarden()],
+        ["🎟️", "Season pass", () => pkmOpenSeason()],
+      ]],
+      ["👥 You & friends", [
+        ["🪪", "Badges & stats", () => pkmOpenBadges()],
+        ["🌐", "Online: GTS, Home, Wonder", () => pkmOpenOnline()],
+        ["⚔️", "Live battle", () => pkmOpenOnline("live")],
+        ["💬", "Trade chat", () => pkmOpenOnline("chat")],
+        ["🛡️", "Guild", () => pkmOpenOnline("guild")],
+        ["🧾", "Trade history", () => pkmOpenOnline("history")],
+        ["👥", "Friends & gifts", () => pkmOpenOnline("friends")],
+        ["🏆", "Leaderboards", () => pkmOpenOnline("ranks")],
+        ["🎉", "Events & shared raid", () => pkmOpenOnline("events")],
+        ["🎀", "Online contest", () => pkmOpenOnline("contest")],
+        ["🔗", "Link & gifts", () => pkmOpenLink()],
+        ["🧢", "Trainer look", () => pkmOpenLook()],
+        ["📊", "Species progress", () => pkmOpenBadges("species")],
+        ["💾", "Save code", () => pkmOpenSaveCode()],
+      ]],
+      ["⚙️ Settings", [
+        [hudHidden ? "👁️" : "🙈", hudHidden ? "Show HUD" : "Hide HUD", () => pkmSetHudHidden(!hudHidden, false)],
+        ["📌", "Reset HUD position", () => pkmResetHud()],
+        ["🛠️", "Options & tools", () => pkmOpenOptions()],
+        ["🆕", "What's new & updates", () => pkmOpenOptions("new")],
+        ["⚙️", "Settings", () => openSettings()],
+        ["🚫", `Turn off on ${location.hostname}`, () => pkmTurnOffHere()],
+      ]],
     ];
-    pkmMenu.innerHTML = `<div class="pkm-menu-head"><span>Pokémon</span><span class="pkm-dim">💰 ${getInt(STORAGE.coins)}</span></div>`;
-    for (const it of items) {
-      if (!it) { const s = document.createElement("div"); s.className = "pkm-menu-sep"; pkmMenu.appendChild(s); continue; }
-      const b = document.createElement("button");
-      b.type = "button";
-      b.className = "pkm-menu-item";
-      b.setAttribute("role", "menuitem");
-      b.innerHTML = `<span class="ico" aria-hidden="true">${it[0]}</span><span>${pkmEsc(it[1])}</span>`;
-      b.onclick = () => { pkmLauncherMenu(false); it[2](); };
-      pkmMenu.appendChild(b);
+    const upd = GM_getValue("pkm_update_remote", "");
+    const hasUpd = !!upd && updater.compareVersions(upd, cfg.CURRENT_VERSION) > 0;
+    pkmMenu.innerHTML = `<div class="pkm-menu-head"><span>Pokémon</span><span class="pkm-dim">💰 ${getInt(STORAGE.coins)}</span><button type="button" class="pkm-x pkm-menu-x" aria-label="Close menu" title="Close (Esc)">✕</button></div>
+      ${hasUpd ? `<button type="button" class="pkm-menu-upd">⬆️ Update ${pkmEsc(upd)} is ready. Install it</button>` : ""}
+      <input type="search" class="pkm-menu-q" placeholder="Find…" aria-label="Find a menu item">
+      <div class="pkm-menu-list"></div>`;
+    const list = pkmMenu.querySelector(".pkm-menu-list");
+    for (const [title, items] of groups) {
+      const sec = document.createElement("div");
+      sec.className = "pkm-menu-grp";
+      sec.innerHTML = `<div class="pkm-menu-gt">${pkmEsc(title)}</div><div class="pkm-menu-grid"></div>`;
+      const grid = sec.querySelector(".pkm-menu-grid");
+      for (const it of items) {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.className = "pkm-menu-item";
+        b.setAttribute("role", "menuitem");
+        b.dataset.q = it[1].toLowerCase();
+        b.innerHTML = `<span class="ico" aria-hidden="true">${it[0]}</span><span>${pkmEsc(it[1])}</span>`;
+        b.onclick = () => { pkmLauncherMenu(false); try { it[2](); } catch (err) { console.warn(err); pkmToast("That isn't ready yet. Try again in a moment."); } };
+        grid.appendChild(b);
+      }
+      list.appendChild(sec);
     }
+    pkmMenu.querySelector(".pkm-menu-x").onclick = () => { pkmLauncherMenu(false); pkmLauncher.focus(); };
+    const ub = pkmMenu.querySelector(".pkm-menu-upd");
+    if (ub) ub.onclick = () => { pkmLauncherMenu(false); window.open(cfg.DOWNLOAD_URL, "_blank"); };
+    const q = pkmMenu.querySelector(".pkm-menu-q");
+    q.oninput = () => {
+      const s = q.value.trim().toLowerCase();
+      pkmMenu.querySelectorAll(".pkm-menu-item").forEach((b) => { b.hidden = !!s && !b.dataset.q.includes(s); });
+      pkmMenu.querySelectorAll(".pkm-menu-grp").forEach((g) => { g.hidden = ![...g.querySelectorAll(".pkm-menu-item")].some((b) => !b.hidden); });
+    };
+    q.onkeydown = (e) => { if (e.key === "Enter") { const first = pkmMenu.querySelector(".pkm-menu-item:not([hidden])"); if (first) first.click(); } else if (e.key === "ArrowDown") { e.preventDefault(); pkmMenu.querySelector(".pkm-menu-item:not([hidden])")?.focus(); } };
     pkmMenu.hidden = false;
     pkmMenu.querySelector(".pkm-menu-item").focus({ preventScroll: true });
   }
@@ -4679,14 +4699,13 @@ button .badge.bg-danger {
     pkmSetHudHidden(!wrap.classList.contains("pkm-hud-hidden"), false);
   };
   pkmMenu.addEventListener("keydown", (e) => {
-    const items = [...pkmMenu.querySelectorAll(".pkm-menu-item")];
+    const items = [...pkmMenu.querySelectorAll(".pkm-menu-item:not([hidden])")];
     const i = items.indexOf(e.target);
     let n = null;
     if (e.key === "ArrowDown") n = (i + 1) % items.length;
     else if (e.key === "ArrowUp") n = (i - 1 + items.length) % items.length;
     else if (e.key === "Home") n = 0;
     else if (e.key === "End") n = items.length - 1;
-    else if (e.key === "Tab") { pkmLauncherMenu(false); return; }
     if (n === null) return;
     e.preventDefault();
     items[n].focus();
@@ -5535,11 +5554,14 @@ button .badge.bg-danger {
         b.foe = await pkmPickWild(b.me.level);
       }
       if (!b.foe) throw new Error("no wild Pokémon");
-      if (trainer && trainer.double) await pkmDblSetup(b);
+      if (trainer && trainer.double) await pkmDblSetup(b, trainer.triple ? 3 : 2);
       else if (!trainer && pkmWildDoubleNext && b.foe.zone === pkmWildDoubleNext) {
         pkmWildDoubleNext = false;
         const f2 = await pkmZoneWild(pkmZoneById(b.foe.zone));
         if (f2) { b.team = [b.foe, f2]; b.foeIdx = 0; await pkmDblSetup(b); if (!b.double) delete b.team; }
+      } else if (!trainer && pkmHordeNext && b.foe.zone === pkmHordeNext) {
+        pkmHordeNext = false;
+        if (!(await pkmHordeSetup(b))) { delete b.team; b.double = false; b.horde = false; }
       }
       if (pkb !== b || !battlePanel) return;
       pkmSyncGlobals(b);
@@ -7000,6 +7022,10 @@ button .badge.bg-danger {
           <div><div class="tr-t">👥 Double battle</div><div class="pkm-dim">2 vs 2 against a trainer with 4 Pokémon. You need at least 2 healthy Pokémon.</div></div>
           <button type="button" class="pkm-btn2 primary" data-a="double">Find a duo</button>
         </div>
+        <div class="tr-random">
+          <div><div class="tr-t">👥 Triple and rotation battles</div><div class="pkm-dim">Triple: 3 vs 3 against a trainer with 6 Pokémon (you need 3 healthy Pokémon). Rotation: your first 3 Pokémon take turns up front, and rotating is free once per turn.</div></div>
+          <div class="pkm-btns"><button type="button" class="pkm-btn2 primary" data-a="triple">Find a trio</button><button type="button" class="pkm-btn2" data-a="rotation">Rotation battle</button></div>
+        </div>
         <div class="tr-random tr-safari">
           <div><div class="tr-t">🌴 Safari Zone</div><div class="pkm-dim">10 minutes, 30 Safari Balls, rare Pokémon. Entry ${pkmSafariCost()} coins.</div></div>
           <button type="button" class="pkm-btn2 primary" data-a="safari">Enter</button>
@@ -7053,6 +7079,8 @@ button .badge.bg-danger {
       if (a === "close") return pkmCloseTrainers();
       if (a === "random") return pkmStartTrainer(pkmRandomTrainer());
       if (a === "double") return pkmStartTrainer(pkmDoubleTrainer());
+      if (a === "triple") return pkmStartTrainer(pkmTripleTrainer());
+      if (a === "rotation") return pkmStartTrainer(pkmRotationTrainer());
       if (a === "safari") return pkmOpenSafari();
       if (a === "tower") return pkmOpenTower();
       if (a === "rival") return pkmStartTrainer(pkmRivalTrainer());
@@ -7072,7 +7100,7 @@ button .badge.bg-danger {
       if (g && !g.disabled) {
         const gym = PKM_GYMS[+g.dataset.gym - 1];
         if (L < gym.lvl - 6) pkmToast(`⚠️ ${gym.leader}'s Pokémon are around Lv ${gym.lvl}. Yours is Lv ${L}. Good luck!`, 3500);
-        pkmStartTrainer(pkmGymTrainer(gym));
+        pkmGymGate(gym, () => pkmStartTrainer(pkmGymTrainer(gym)));
       }
     };
     pkmMount(p);
@@ -7368,7 +7396,7 @@ button .badge.bg-danger {
       const sp = await pkmSpeciesData(nm);
       const ch = sp && sp.evolution_chain ? await (await pkmFetch(sp.evolution_chain.url)).json() : null;
       const node = ch ? pkmFindChainNode(ch.chain, sp.name) : null;
-      const opts = node ? node.evolves_to.filter((n) => (n.evolution_details || []).some((d) => d.trigger && d.trigger.name === "use-item" && d.item && d.item.name === stone)) : [];
+      const opts = node ? node.evolves_to.filter((n) => (n.evolution_details || []).some((d) => d.trigger && d.trigger.name === "use-item" && d.item && d.item.name === stone && pkmEvoGenderOk(d, id))) : [];
       if (!opts.length) return pkmToast(`It won't have any effect on ${pkmCap(nm)}.`);
       const target = pkmPick(opts).species.name;
       setInt(key, getInt(key) - 1);
@@ -7507,8 +7535,10 @@ button .badge.bg-danger {
   // =====================================================================
 
   // ---------- Evolution (level-up, friendship, time of day) ----------
-  const PKM_EVO_UNSUPPORTED = ["held_item", "known_move", "known_move_type", "location", "min_affection", "min_beauty", "gender", "party_species",
+  const PKM_EVO_UNSUPPORTED = ["held_item", "known_move", "known_move_type", "location", "min_affection", "min_beauty", "party_species",
     "party_type", "relative_physical_stats", "needs_overworld_rain", "trade_species", "turn_upside_down", "item"];
+  /** PokéAPI evolution gender: 1 = female only (Vespiquen, Froslass), 2 = male only (Gallade, Mothim). */
+  function pkmEvoGenderOk(d, id) { if (d.gender == null) return true; const g = pkmGenderOf(id); return d.gender === 1 ? g === "female" : g === "male"; }
   async function pkmEvolveTo(id, target) {
     const party = getObj(STORAGE.party) || {};
     const mon = party[id];
@@ -7544,7 +7574,8 @@ button .badge.bg-danger {
         !PKM_EVO_UNSUPPORTED.some((k) => d[k] != null && d[k] !== false && d[k] !== "") &&
         (d.min_level == null || (s.level || 1) >= d.min_level) &&
         (d.min_happiness == null || (s.friendship == null ? 70 : s.friendship) >= d.min_happiness) &&
-        (!d.time_of_day || d.time_of_day === tod);
+        (!d.time_of_day || d.time_of_day === tod) &&
+        pkmEvoGenderOk(d, id);
       const next = (node.evolves_to || []).find((n) => (n.evolution_details || []).some(ok));
       if (next) await pkmEvolveTo(id, next.species.name);
     } catch (e) {
@@ -7824,7 +7855,7 @@ button .badge.bg-danger {
       pkmDrawSafari("You walk into the tall grass…");
       try {
         const legend = Math.random() < 0.02;
-        const sp = legend ? pkmPick(PKM_SAFARI_LEGENDS) : pkmPick(PKM_SAFARI_POOL);
+        const sp = legend ? pkmPick(PKM_SAFARI_LEGENDS) : (pkmSafariOutbreakPick() || pkmPick(PKM_SAFARI_POOL));
         const L = pkmSafariBase();
         const mon = await pkmBuildMon(sp, Math.max(5, Math.min(MAX_LEVEL, L + pkmRand(-3, 3))), { shinyMult: 2 });
         if (!mon) throw new Error("no data");
@@ -9199,8 +9230,75 @@ button .badge.bg-danger {
   }
 
   // ---------- Options: difficulty, speed, teams, damage calculator, battle logs, what's new ----------
-  const PKM_VERSION = "4.0";
+  const PKM_VERSION = "4.6";
   const PKM_CHANGES = [
+    ["4.6", "Pick 1 of 3 random starters", [
+      "🔰 New trainers are offered 3 random starters from the main games (Bulbasaur to Quaxly) instead of the whole Pokédex.",
+      "🔒 Your starter choice is final: the three are saved so you can't re-roll, and the Change starter button is gone.",
+      "🌐 With the game server on, reinstalling the script gives you the same three starters (and your pick) back.",
+      "🎨 The starter menu now looks like the other menus, with sprites and a header bar."
+    ]],
+    ["4.5", "Quick match, guild shop, bonus pass & more", [
+      "⚡ Quick match: find a ranked opponent automatically. 🏆 Best-of-3 live battles (first to 2 wins).",
+      "🔁 In rotation battles the other trainer rotates too, and 🐾 in a horde you can catch the last Pokémon left.",
+      "🛡️ Guilds: guild chat, a guild shop paid with guild points (from raid damage), and ranks: leader, officers and members.",
+      "🎟️ Season pass bonus track (5000 coins) and a season ranking with prizes when the month ends.",
+      "🌍 GTS: a wish list, a list of offers you can fill with Pokémon you already have, and 🧾 your trade history.",
+      "🏭 Battle Frontier progress (Factory, Arcade, Pike, Hall, Castle) is checked by the server and has leaderboards.",
+      "🪪 Profiles: pick a background and 3 favorite Pokémon, and like your friends' profiles.",
+      "🤝 Community catch goal: everyone's catches add up, and when the goal is reached each helper gets an event Pokémon with a special move.",
+      "Server admin: an admin action log, temporary suspensions and a blocked-words list for names."
+    ]],
+    ["4.4", "Guilds, season pass, ranked battles & more", [
+      "⚔️ Live battles: your friend can now switch Pokémon, anyone with the code can watch, and 🏅 ranked battles change your live rating.",
+      "💬 Trade chat with set messages (Looking for…, Offering…, GG!), with a ⚑ button to report a trainer.",
+      "🛡️ Guilds: make or join one with a short tag, fight your guild's weekly raid boss together, and race other guilds on the leaderboard.",
+      "🎟️ Season pass: 5 weekly missions give season points; 20 reward tiers each month, including 2 villain-boss outfits for your trainer look.",
+      "🗼 Online Battle Tower runs are checked by the server (everyone faces the same foes on a run), so the Tower leaderboard is fair.",
+      "🔔 Desktop alerts when an online trade or Wonder Trade finishes, or a friend sends a gift.",
+      "🪪 Public trainer profile page you can share (turn it on in 🌐 Online → Friends).",
+      "📕 National Dex across all your browsers, and send Pokémon straight to a friend's Home box.",
+      "🎉 Seasonal places from the server admin, with costume Pokémon.",
+      "Fixed: the Habitat map showed every place as locked."
+    ]],
+    ["4.3", "Live battles, friends, events & more", [
+      "⚔️ Live battles with a friend: one of you makes a battle code, the other joins, and you battle turn by turn.",
+      "🏆 Leaderboards for the Battle Tower, Pokédex, shiny species and the weekly ladder.",
+      "🎉 Server events: a weekly Mystery Gift, a shared raid where everyone's damage adds up, and a Safari Zone outbreak.",
+      "👥 Friends: add friends with a 12-digit friend code and send each one a gift a day (coins, items or a Pokémon).",
+      "🔗 Share a battle replay as a link from Options → Battle logs, and watch replays others share.",
+      "🎀 Online contests: enter a Pokémon each week and compete with other players' entries.",
+      "Badges next to your name on the GTS, the leaderboards and your friends' lists.",
+      "🗺️ Habitat map: which Pokémon live in each place, and which you still need.",
+      "Weather events on the map: snowstorms bring Ice types, heatwaves Fire types, thunderstorms Electric types, and more.",
+      "Your walking partner shows its mood. Click the bubble to see how it feels."
+    ]],
+    ["4.2", "Online trades, Camp, villains & more", [
+      "🌐 Online: trade on the GTS with players everywhere, keep Pokémon in a Home box you can open in another browser, and Wonder Trade. It uses the game server at dstokesncstudio.com.",
+      "Wonder Trade works without the server too: you get a random Pokémon from a list.",
+      "⛺ Pokémon Camp: pet, feed and play with your party to raise friendship.",
+      "Hidden Grottos (a Pokémon with its hidden ability) and hordes (5 wild Pokémon at once) on map walks.",
+      "🌀 Ultra Wormholes after the Alola League: Ultra Beasts and legends, 3 trips a day.",
+      "🦹 Villain teams: a 4-chapter story in every region, from Team Rocket to Macro Cosmos.",
+      "📊 Species progress on the trainer card: catches, shinies and shiny odds for every species.",
+      "Dawn, dusk and night tint the battle background, and attacks have animations for each type.",
+      "🧩 Gym puzzles before your first challenge of each Gym Leader (you can turn them off in Options).",
+      "🧢 Trainer look: pick your outfit, card color and title for the trainer card and card image."
+    ]],
+    ["4.1", "Side menu, updates, triples & more", [
+      "The Poké Ball menu is now a side panel with groups and a search box, so it fits on any screen.",
+      "Update checks work again: the game checks GitHub for Pokemon Battle (Full Edition).user.js, shows a banner when a new version is out, and Options → What's new has a Check for updates button.",
+      "Triple battles (3 vs 3) and rotation battles (a free rotation each turn) from Trainers.",
+      "Telepathy works: moves that hit everyone, like Earthquake and Surf, now also hit your partner unless it has Telepathy.",
+      "Female Pokémon with a different look use their own sprite (like Pikachu's heart-shaped tail).",
+      "Gender evolutions: Combee → Vespiquen and Salandit → Salazzle (female), Kirlia → Gallade with a Dawn Stone (male), Snorunt → Froslass (female), Burmy → Wormadam or Mothim.",
+      "Gigantamax Factor: Pokémon caught from a G-Max Max Raid can Gigantamax. Pokémon you had before 4.1 keep the ability.",
+      "Shiny odds grow as you catch more of a species: x1.5 at 10, x2 at 25, x3 at 50 and x4 at 100.",
+      "Nuzlocke panel with a graveyard, plus hardcore rules: no items in battle and a level cap at the next Gym Leader's level.",
+      "Ribbons tab on the trainer card for your Contest winners.",
+      "Save codes: copy your whole save as text and restore it on another computer.",
+      "Bag: Select many to release several Pokémon at once."
+    ]],
     ["4.0", "Battle tricks, wild doubles, Nuzlocke & more", [
       "Helping Hand, Follow Me and Friend Guard in double battles (Telepathy is listed but has no effect yet, because allies never hit each other).",
       "Trick Room, Tailwind, Leech Seed, Taunt and Encore.",
@@ -9426,7 +9524,7 @@ button .badge.bg-danger {
   setTimeout(() => {
     if (GM_getValue("pkm_seen_version", "") === PKM_VERSION) return;
     GM_setValue("pkm_seen_version", PKM_VERSION);
-    if (Object.keys(getObj(STORAGE.party) || {}).length) pkmToast("✨ Pokémon 4.0: wild doubles, Trick Room and Tailwind, form-changing abilities, gender and breeding, fishing, roaming legendaries, Battle Hall and Castle, Nuzlocke mode and more. See Options → What's new.", 9000);
+    if (Object.keys(getObj(STORAGE.party) || {}).length) pkmToast("✨ Pokémon 4.6: new trainers now pick 1 of 3 random starters, and the choice is final. See Options → What's new.", 9000);
   }, 6000);
 
   // ---------- Styles: map, explore, options ----------
@@ -10306,17 +10404,20 @@ button .badge.bg-danger {
     pkmSyncGlobals(b);
   }
   const pkmDblBench = (b) => b.roster.filter((r) => !b.mine.includes(r.mon) && pkmRosterHP(r).hp > 0);
-  /** Turn a battle that was just built for singles into a double battle (needs 2 healthy Pokémon on each side). */
-  async function pkmDblSetup(b) {
+  /** Turn a battle that was just built for singles into a double (size 2) or triple (size 3) battle. Needs 2+ healthy Pokémon on each side. */
+  async function pkmDblSetup(b, size = 2) {
     const leadEntry = b.roster.find((r) => r.mon === b.me);
-    const second = b.roster.find((r) => r !== leadEntry && pkmRosterHP(r).hp > 0);
-    if (!second || b.team.length < 2) return false;
-    if (!second.mon) second.mon = await pkmBuildInstance(second.id);
-    if (!second.mon) return false;
+    const extra = b.roster.filter((r) => r !== leadEntry && pkmRosterHP(r).hp > 0).slice(0, size - 1);
+    if (!extra.length || b.team.length < 2) return false;
+    for (const r of extra) if (!r.mon) r.mon = await pkmBuildInstance(r.id);
+    const ready = extra.filter((r) => r.mon).map((r) => r.mon);
+    if (!ready.length) return false;
+    const n = Math.min(size, 1 + ready.length, b.team.length);
     b.double = true;
-    b.mine = [b.me, second.mon];
-    b.foes = [b.team[0], b.team[1]];
-    b.foeNext = 2;
+    b.triple = n === 3;
+    b.mine = [b.me, ...ready].slice(0, n);
+    b.foes = b.team.slice(0, n);
+    b.foeNext = n;
     b.dbl = { slot: 0, picks: [], stage: "move", pending: null, refill: [] };
     pkmDblPrimary(b);
     return true;
@@ -10328,7 +10429,7 @@ button .badge.bg-danger {
   }
   const pkmDblNeedsTarget = (mv) => !pkmSelfMove(mv) && !/^all-(opponents|other-pokemon)/.test(mv.target || "");
   function pkmDblFirstSlot(b, from = 0) {
-    for (let i = from; i < 2; i++) if (b.mine[i] && b.mine[i].hp > 0) return i;
+    for (let i = from; i < b.mine.length; i++) if (b.mine[i] && b.mine[i].hp > 0) return i;
     return -1;
   }
   function pkmDblPick(b, action) {
@@ -10396,7 +10497,7 @@ button .badge.bg-danger {
   }
   /** After a turn: the foe sends in replacements; you pick yours. Returns true when the battle is over. */
   async function pkmDblRefill(b) {
-    for (let i = 0; i < 2; i++) {
+    for (let i = 0; i < b.foes.length; i++) {
       if (b.foes[i] && b.foes[i].hp > 0) continue;
       if (b.foeNext < b.team.length) {
         const nm = b.team[b.foeNext++];
@@ -10409,7 +10510,7 @@ button .badge.bg-danger {
     }
     if (!b.foes.some((f) => f && f.hp > 0)) { await pkmWin(b); return true; }
     const bench = pkmDblBench(b);
-    const empty = [0, 1].filter((i) => !b.mine[i] || b.mine[i].hp <= 0);
+    const empty = b.mine.map((_, i) => i).filter((i) => !b.mine[i] || b.mine[i].hp <= 0);
     if (!b.mine.some((m) => m && m.hp > 0) && !bench.length) {
       if (getInt("pkm_revive") > 0) { b.awaitRevive = true; b.busy = false; drawBattle("Your Pokémon fainted! Use a Revive to keep fighting?"); return true; }
       await pkmLose(b);
@@ -10501,10 +10602,10 @@ button .badge.bg-danger {
     }
     battlePanel.classList.add("pk-card", "pkb-card");
     battlePanel.innerHTML = `${tr ? `<div class="pkb-trainer"><img class="pkb-tr-img" src="${pkmEsc(tr.sprite)}" alt=""><div><b>${pkmEsc(tr.title)} ${pkmEsc(tr.name)}</b>
-        <div class="pkb-balls">${b.team.map((m) => `<span class="${m.hp <= 0 ? "out" : b.foes.includes(m) ? "cur" : ""}"></span>`).join("")}</div></div><span class="pkb-gym">👥 Double battle${tr.pvp ? " · friend" : ""}</span></div>` : ""}${pkmFieldChips(b)}
+        <div class="pkb-balls">${b.team.map((m) => `<span class="${m.hp <= 0 ? "out" : b.foes.includes(m) ? "cur" : ""}"></span>`).join("")}</div></div><span class="pkb-gym">👥 ${b.triple ? "Triple" : "Double"} battle${tr.pvp ? " · friend" : ""}</span></div>` : ""}${pkmFieldChips(b)}
       <div class="pkb-field dbl-field${b.night ? " night" : ""}"${b.zone && pkmZoneById(b.zone) ? ` style="background:${PKM_ZONE_THEME[pkmZoneById(b.zone).theme]}"` : ""}>
-        <div class="pkb-row foe dbl-row">${box(b.foes[0], "foe")}${box(b.foes[1], "foe")}</div>
-        <div class="pkb-row me dbl-row">${box(b.mine[0], "me")}${box(b.mine[1], "me")}</div>
+        <div class="pkb-row foe dbl-row${b.triple ? " tri" : ""}">${b.foes.map((m) => box(m, "foe")).join("")}</div>
+        <div class="pkb-row me dbl-row${b.triple ? " tri" : ""}">${b.mine.map((m) => box(m, "me")).join("")}</div>
       </div>
       <div class="pkb-msg" aria-live="polite">${pkmEsc(b.msg || "")}${!busy && d.slot >= 0 && !d.refill.length && !b.awaitRevive ? ` <b>(${pkmEsc(b.mine[d.slot].display)})</b>` : ""}</div>
       <div class="pk-controls pkb-controls">${controls}</div>`;
@@ -10561,6 +10662,9 @@ button .badge.bg-danger {
   pkmStyle(`
     .dbl-field{gap:8px}
     .dbl-row{display:grid!important;grid-template-columns:1fr 1fr;gap:8px;align-items:end}
+    .dbl-row.tri{grid-template-columns:1fr 1fr 1fr}
+    .dbl-row.tri .dbl-spr{width:64px;height:64px}
+    .dbl-row.tri .dbl-info{font-size:11px;padding:3px 5px}
     .dbl-mon{display:flex;flex-direction:column;align-items:center;gap:2px;min-height:90px}
     .dbl-mon.out{opacity:.35}
     .dbl-spr{width:80px;height:80px;image-rendering:pixelated}
@@ -11931,14 +12035,17 @@ button .badge.bg-danger {
     const c = document.createElement("canvas");
     c.width = 640; c.height = 360;
     const g = c.getContext("2d");
-    const grd = g.createLinearGradient(0, 0, 640, 360); grd.addColorStop(0, "#1f6fe0"); grd.addColorStop(1, "#7a2fb5");
+    const look = pkmLook();
+    const lc = PKM_LOOK_COLORS[look.color] || PKM_LOOK_COLORS[0];
+    const grd = g.createLinearGradient(0, 0, 640, 360); grd.addColorStop(0, lc[1]); grd.addColorStop(1, lc[2]);
     g.fillStyle = grd; g.fillRect(0, 0, 640, 360);
     g.fillStyle = "rgba(255,255,255,.12)"; g.fillRect(20, 20, 600, 320);
     const k = pkmRank();
     const p = pkmProgressView();
     g.fillStyle = "#fff"; g.font = "bold 30px sans-serif"; g.fillText(pkmTrainerName(), 40, 70);
     g.font = "20px sans-serif";
-    g.fillText(`${k.name} · ${k.pts} rank points`, 40, 102);
+    g.fillText(`${look.title || k.name} · ${k.pts} rank points`, 40, 102);
+    await new Promise((res) => { const t = new Image(); t.crossOrigin = "anonymous"; t.onload = () => { try { g.drawImage(t, 480, 30, 120, 120); } catch {} res(); }; t.onerror = res; t.src = `${PKM_TRAINER_IMG}${look.sprite}.png`; });
     g.fillText(`Badges ${p._badges}/${PKM_GYMS.length} · Champions ${p._champs}/${PKM_REGIONS.length}`, 40, 134);
     g.fillText(`Pokédex ${p._dex} · Tower best ${p._towerBest || 0} · Caught ${p.caught || 0}`, 40, 164);
     const party = getObj(STORAGE.party) || {};
@@ -12310,6 +12417,2738 @@ button .badge.bg-danger {
     .cr-head{background:linear-gradient(90deg,#8a6a3a,#5a3a1a)!important}.tp-head{background:linear-gradient(90deg,#3aa06a,#1a6040)!important}
   `, "pkm-v40");
 
+  // =====================================================================
+  //  4.1: update notices, Telepathy, triple and rotation battles, gender
+  //  sprites, Gigantamax Factor, Nuzlocke graveyard and hardcore rules,
+  //  shiny odds per species, ribbons on the trainer card, save codes,
+  //  and selecting many Pokémon in the Bag
+  // =====================================================================
+
+  // ---------- Update notice (a banner instead of the old confirm() box) ----------
+  let pkmUpdBanner = null;
+  function pkmUpdateNotice(v) {
+    try {
+      if (!v || updater.compareVersions(v, cfg.CURRENT_VERSION) <= 0) return;
+      if (GM_getValue("pkm_update_dismissed", "") === v) return;
+      if (pkmUpdBanner) pkmUpdBanner.remove();
+      const el = document.createElement("div");
+      el.className = "pkm-upd-banner";
+      el.setAttribute("role", "status");
+      el.innerHTML = `<span>⬆️ <b>Pokémon Battle ${pkmEsc(v)}</b> is out (you have ${pkmEsc(cfg.CURRENT_VERSION)}).</span>
+        <button type="button" class="pkm-btn2 primary" data-u="go">Update now</button><button type="button" class="pkm-btn2" data-u="new">What's new</button><button type="button" class="pkm-x" data-u="later" aria-label="Later" title="Remind me next version">✕</button>`;
+      el.onclick = (e) => {
+        const a = e.target.closest("[data-u]")?.dataset.u;
+        if (!a) return;
+        if (a === "go") window.open(cfg.DOWNLOAD_URL, "_blank");
+        if (a === "new") pkmOpenOptions("new");
+        if (a === "later" || a === "go") GM_setValue("pkm_update_dismissed", v);
+        el.remove(); pkmUpdBanner = null;
+      };
+      pkmMount(el);
+      pkmUpdBanner = el;
+      pkmLauncher.classList.add("has-upd");
+    } catch (e) { console.warn(e); }
+  }
+  /** Ask GitHub for the newest version now (skips the 1-hour cache). Returns { remote, newer } or null. */
+  async function pkmCheckUpdateNow() {
+    const remote = await updater.fetchRemoteVersion(cfg.DOWNLOAD_URL, true);
+    if (!remote) return null;
+    GM_setValue("pkm_update_remote", remote);
+    const newer = updater.compareVersions(remote, cfg.CURRENT_VERSION) > 0;
+    if (newer) { GM_deleteValue("pkm_update_dismissed"); pkmUpdateNotice(remote); }
+    return { remote, newer };
+  }
+  setTimeout(() => {
+    const v = GM_getValue("pkm_update_remote", "");
+    if (v && updater.compareVersions(v, cfg.CURRENT_VERSION) > 0) pkmUpdateNotice(v);
+  }, 4000);
+  // Check again every 3 hours on long-open tabs
+  setInterval(() => { if (!document.hidden) updater.fetchRemoteVersion(cfg.DOWNLOAD_URL).then((v) => { if (v) { GM_setValue("pkm_update_remote", v); pkmUpdateNotice(v); } }).catch(() => {}); }, 3 * 3600e3);
+
+  // ---------- Options → What's new: version, update check ----------
+  {
+    const dro = pkmDrawOptions;
+    pkmDrawOptions = function () {
+      const r = dro.apply(this, arguments);
+      const P = pkmOptionsPanel;
+      if (!P || pkmOptionsTab !== "new" || P.querySelector(".op-upd")) return r;
+      const remote = GM_getValue("pkm_update_remote", "");
+      const newer = remote && updater.compareVersions(remote, cfg.CURRENT_VERSION) > 0;
+      P.querySelector(".lk-body").insertAdjacentHTML("afterbegin", `<div class="op-upd">
+        <div><b>You have version ${pkmEsc(cfg.CURRENT_VERSION)}</b><div class="pkm-dim op-upd-st" aria-live="polite">${newer ? `Version ${pkmEsc(remote)} is ready to install.` : remote ? `Newest on GitHub: ${pkmEsc(remote)}.` : "Not checked yet."}</div></div>
+        <div class="pkm-btns"><button type="button" class="pkm-btn2" data-upd="check">🔄 Check for updates</button><button type="button" class="pkm-btn2 primary" data-upd="go" ${newer ? "" : "hidden"}>⬆️ Install update</button></div></div>`);
+      const st = P.querySelector(".op-upd-st");
+      const go = P.querySelector('[data-upd="go"]');
+      P.querySelector('[data-upd="check"]').onclick = async (e) => {
+        e.stopPropagation();
+        e.currentTarget.disabled = true;
+        st.textContent = "Checking GitHub…";
+        const res = await pkmCheckUpdateNow().catch(() => null);
+        if (!st.isConnected) return;
+        P.querySelector('[data-upd="check"]').disabled = false;
+        if (!res) { st.textContent = "Couldn't reach GitHub. Check your connection and try again."; return; }
+        st.textContent = res.newer ? `Version ${res.remote} is ready to install.` : `You're up to date (newest is ${res.remote}).`;
+        go.hidden = !res.newer;
+      };
+      go.onclick = (e) => { e.stopPropagation(); window.open(cfg.DOWNLOAD_URL, "_blank"); };
+      return r;
+    };
+  }
+
+  // ---------- Telepathy: moves that hit everyone also hit your partner, unless it has Telepathy ----------
+  {
+    const dm = pkmDblMove;
+    pkmDblMove = async function (b, att, mv, target) {
+      const r = await dm.apply(this, arguments);
+      if (!b.double || !mv || pkmSelfMove(mv) || !/^all-other-pokemon/.test(mv.target || "") || att.hp <= 0 || !pkmAlive(b) || att.charging) return r;
+      const side = pkmMine(b, att) ? b.mine : b.foes;
+      for (const al of side.filter((x) => x && x !== att && x.hp > 0)) {
+        if (!pkmAlive(b)) break;
+        if (al.ability === "telepathy") { await pkmSay(b, `${pkmWho(b, al)} read its partner's mind and dodged with Telepathy!`, 700); continue; }
+        await pkmUseMove(b, att, al, { ...mv, spread: 0.75, srcMove: mv.srcMove || mv, noPP: true, quiet: true });
+      }
+      return r;
+    };
+  }
+
+  // ---------- Triple and rotation battles ----------
+  function pkmTripleTrainer() {
+    const t = pkmDoubleTrainer();
+    const L = pkmTrainerBase();
+    const c = PKM_TRAINER_CLASSES.find((x) => t.title.startsWith(x.title)) || PKM_TRAINER_CLASSES[0];
+    t.team = Array.from({ length: 6 }, () => [pkmPick(c.pool), Math.max(2, Math.min(MAX_LEVEL, L + pkmRand(-2, 1)))]);
+    t.title = t.title.replace(/ duo$/, " trio");
+    t.triple = true;
+    return t;
+  }
+  function pkmRotationTrainer() {
+    const t = pkmRandomTrainer();
+    const L = pkmTrainerBase();
+    const c = PKM_TRAINER_CLASSES.find((x) => x.title === t.title) || PKM_TRAINER_CLASSES[0];
+    t.team = Array.from({ length: 3 }, () => [pkmPick(c.pool), Math.max(2, Math.min(MAX_LEVEL, L + pkmRand(-1, 1)))]);
+    t.title = `${t.title} (rotation)`;
+    t.rotation = true;
+    return t;
+  }
+  /** Rotation: your first 3 healthy Pokémon take turns; one free rotation per turn. */
+  const pkmRotationPool = (b) => b.roster.filter((r) => pkmRosterHP(r).hp > 0).slice(0, 3);
+  async function pkmRotate(b) {
+    if (!b || !b.trainer || !b.trainer.rotation || b.busy || b.over || b.rotated || b.awaitSwitch || b.awaitRevive) return;
+    const pool = pkmRotationPool(b);
+    const i = pool.findIndex((r) => r.mon === b.me);
+    const next = pool[(i + 1) % pool.length];
+    if (!next || next.mon === b.me) return;
+    b.busy = true;
+    await pkmDoSwitch(b, next.id);
+    b.busy = false;
+    b.rotated = true;
+    if (pkmAlive(b)) drawBattle(`${b.me.display} rotated to the front! What will it do?`);
+  }
+  {
+    const tn = pkmTurn;
+    pkmTurn = async function () {
+      // The free rotation comes back at the start of each turn, so the end-of-turn screen shows it again
+      if (pkb && !pkb.busy) pkb.rotated = false;
+      return tn.apply(this, arguments);
+    };
+  }
+
+  // ---------- Battle screen: rotation button, hardcore Nuzlocke (no items) ----------
+  const pkmNuzRule = (k) => pkmNuzOn() && GM_getValue(`pkm_nuz_${k}`, "false") === "true";
+  {
+    const db = drawBattle;
+    drawBattle = function () {
+      const r = db.apply(this, arguments);
+      const b = pkb;
+      if (!b || !battlePanel) return r;
+      const ctl = battlePanel.querySelector(".pk-controls");
+      if (ctl && !b.double && b.trainer && b.trainer.rotation && !b.busy && !b.over && !b.awaitSwitch && !b.awaitRevive && !b.choosing && pkmRotationPool(b).length > 1 && !ctl.querySelector("[data-rot]")) {
+        ctl.insertAdjacentHTML("beforeend", `<button type="button" class="pk-btn pkb-act" data-rot="1" ${b.rotated ? "disabled" : ""} title="Rotate to your next Pokémon for free (once per turn)"><div class="pk-ico">🔁</div><div class="pk-label">Rotate</div></button>`);
+        ctl.querySelector("[data-rot]").onclick = (e) => { e.stopPropagation(); pkmRotate(b); };
+      }
+      if (ctl && pkmNuzRule("noitems") && !(b.trainer && b.trainer.pvp)) {
+        ctl.querySelectorAll('[data-act="items"],[data-act="revive"],[data-dact="potion"],[data-dact="revive"],[data-item]').forEach((x) => { x.disabled = true; x.title = "Hardcore Nuzlocke: no items in battle"; });
+      }
+      return r;
+    };
+  }
+
+  // ---------- Hardcore Nuzlocke: level cap at the next Gym Leader's level ----------
+  {
+    const gx = pkmGiveXP;
+    pkmGiveXP = async function (b, mon, xp, quiet) {
+      if (pkmNuzRule("lvcap") && mon && pkmMine(b || pkb || {}, mon)) {
+        const cap = pkmAreaLevel();
+        if (mon.level >= cap) {
+          if (b && !b.capSaid) { b.capSaid = true; await pkmSay(b, `Level cap: ${mon.display} can't grow past Lv ${cap} until you beat the next Gym Leader.`, 1000); }
+          return;
+        }
+      }
+      return gx.apply(this, arguments);
+    };
+  }
+
+  // ---------- Gender sprites (female forms like Pikachu's heart tail) ----------
+  const PKM_FEMALE_SPR = new Set([3, 12, 19, 20, 25, 26, 41, 42, 44, 45, 64, 65, 84, 85, 97, 111, 112, 118, 119, 123, 129, 130, 133, 154, 165, 166, 178, 185, 186, 190, 194, 195, 198, 202, 203, 207, 208, 212, 214, 215, 217, 221, 224, 229, 232, 255, 256, 257, 267, 269, 272, 274, 275, 307, 308, 315, 316, 317, 322, 323, 332, 350, 369, 396, 397, 398, 399, 400, 401, 402, 403, 404, 405, 407, 415, 417, 418, 419, 424, 443, 444, 445, 449, 450, 453, 454, 456, 457, 459, 460, 461, 464, 465, 473, 521, 592, 593, 668, 678, 876]);
+  function pkmFemaleSprites(m) {
+    if (!m || m.gender !== "female" || !PKM_FEMALE_SPR.has(m.dexId) || m.costume) return;
+    const sh = m.shiny ? "shiny/" : "";
+    m.front = `${PKM_SPRITES}${sh}female/${m.dexId}.png`;
+    m.back = `${PKM_SPRITES}back/${sh}female/${m.dexId}.png`;
+  }
+  {
+    const bi = pkmBuildInstance;
+    pkmBuildInstance = async function (id) {
+      const m = await bi.apply(this, arguments);
+      if (!m) return m;
+      m.gender = pkmGenderOf(id);
+      pkmFemaleSprites(m);
+      // Gigantamax needs the Gigantamax Factor (from Max Raids). Pokémon you had before 4.1 keep it.
+      const s = (getObj(STORAGE.stats) || {})[id] || {};
+      if (m.gmaxForm && !s.gmax && !s.gmaxLegacy) m.gmaxForm = null;
+      return m;
+    };
+    const pw = pkmPickWild;
+    pkmPickWild = async function () {
+      const m = await pw.apply(this, arguments);
+      if (m && !m.gender) { m.gender = pkmRollGender(m.name, `${Date.now()}-${Math.random()}`); if (!m.gmaxBoss) pkmFemaleSprites(m); }
+      return m;
+    };
+  }
+
+  // ---------- Gigantamax Factor ----------
+  try {
+    if (GM_getValue("pkm_gmax_migrated", "") !== "1") {
+      const all = getObj(STORAGE.stats) || {};
+      const party = getObj(STORAGE.party) || {};
+      let changed = false;
+      for (const id of Object.keys(party)) if (all[id] && typeof all[id] === "object") { all[id].gmaxLegacy = true; changed = true; }
+      if (changed) setObj(STORAGE.stats, all);
+      GM_setValue("pkm_gmax_migrated", "1");
+    }
+  } catch (e) { console.warn("G-Max migration skipped:", e); }
+  // ---------- Shiny odds that grow as you catch more of a species ----------
+  const PKM_SHINY_STEPS = [[100, 4], [50, 3], [25, 2], [10, 1.5]];
+  function pkmSpeciesCaught(name) {
+    const n = String(name || "").toLowerCase();
+    const rec = pkmJSON("pkm_species_caught", {});
+    if (rec[n] == null) rec[n] = Object.values(getObj(STORAGE.party) || {}).filter((p) => String(p.name).toLowerCase() === n).length;
+    return rec[n];
+  }
+  const pkmShinyBonus = (name) => { const c = pkmSpeciesCaught(name); const s = PKM_SHINY_STEPS.find(([k]) => c >= k); return s ? s[1] : 1; };
+  {
+    const mf = pkmMonFromData;
+    pkmMonFromData = function (d, level, opt = {}) {
+      if (opt.shiny == null && d && d.name) opt = { ...opt, shinyMult: (opt.shinyMult || 1) * pkmShinyBonus(d.name) };
+      return mf.call(this, d, level, opt);
+    };
+    const sc = pkmStoreCaught;
+    pkmStoreCaught = function (f, source) {
+      const id = sc.apply(this, arguments);
+      try {
+        if (f && f.gmaxBoss) { const all = getObj(STORAGE.stats) || {}; if (all[id]) { all[id].gmax = true; setObj(STORAGE.stats, all); } }
+        if (f && f.name && source !== "test") {
+          const n = String(f.name).toLowerCase();
+          const before = pkmShinyBonus(n);
+          const rec = pkmJSON("pkm_species_caught", {});
+          rec[n] = pkmSpeciesCaught(n) + 1;
+          pkmSave("pkm_species_caught", rec);
+          const after = pkmShinyBonus(n);
+          if (after > before) setTimeout(() => pkmToast(`✨ You've caught ${rec[n]} ${pkmCap(n)}. Shiny ${pkmCap(n)} are now x${after} as likely!`, 5000), 900);
+        }
+      } catch (e) { console.warn(e); }
+      return id;
+    };
+    const bt = pkmBagTraits;
+    pkmBagTraits = function (id, mon, st) {
+      let h = bt.apply(this, arguments);
+      const extra = [];
+      if (st && (st.gmax || st.gmaxLegacy) && PKM_GMAX[String(mon.name).toLowerCase()]) extra.push(`<span title="Can Gigantamax with the Dynamax Band">⚡ G-Max Factor</span>`);
+      const sb = pkmShinyBonus(mon.name);
+      if (sb > 1) extra.push(`<span title="Shiny odds for this species, from how many you've caught">✨ x${sb} shiny odds</span>`);
+      if (extra.length) h = h.replace('<div class="bag-traits">', `<div class="bag-traits">${extra.join("")}`);
+      return h;
+    };
+  }
+
+  // ---------- Nuzlocke panel: rules and graveyard ----------
+  let pkmNuzPanel = null;
+  let pkmNuzAsk = 0;
+  function pkmCloseNuzlocke() { if (pkmNuzPanel) pkmNuzPanel.remove(); pkmNuzPanel = null; }
+  function pkmOpenNuzlocke() {
+    if (!pkmNuzPanel) pkmNuzPanel = pkmMakePanel("pkm-nuz", "Nuzlocke", (e) => {
+      const a = e.target.closest("[data-a]")?.dataset.a;
+      const rule = e.target.closest("[data-rule]")?.dataset.rule;
+      if (a === "close") return pkmCloseNuzlocke();
+      if (a === "toggle") {
+        if (pkmNuzOn()) { GM_setValue("pkm_nuzlocke", "false"); return pkmOpenNuzlocke(); }
+        if (Date.now() - pkmNuzAsk > 4000) { pkmNuzAsk = Date.now(); return pkmToast("Fainted Pokémon will be released for good. Press again to turn Nuzlocke on.", 4500); }
+        GM_setValue("pkm_nuzlocke", "true"); pkmSave("pkm_nuz_zones", {});
+        return pkmOpenNuzlocke();
+      }
+      if (rule) { const k = `pkm_nuz_${rule}`; GM_setValue(k, GM_getValue(k, "false") === "true" ? "false" : "true"); return pkmOpenNuzlocke(); }
+      if (a === "clear") { pkmSave("pkm_nuz_lost", []); return pkmOpenNuzlocke(); }
+    });
+    const on = pkmNuzOn();
+    const grave = pkmJSON("pkm_nuz_lost", []).slice().reverse();
+    const used = Object.keys(pkmJSON("pkm_nuz_zones", {})).length;
+    const dexArr = getArr(STORAGE.pokedex) || [];
+    const ruleBtn = (k, label, desc) => { const v = GM_getValue(`pkm_nuz_${k}`, "false") === "true"; return `<div class="nz-rule"><div><b>${label}</b><div class="pkm-dim">${desc}</div></div><button type="button" class="pkm-btn2 ${v ? "primary" : ""}" data-rule="${k}" aria-pressed="${v}">${v ? "On" : "Off"}</button></div>`; };
+    pkmNuzPanel.innerHTML = `${pkmPanelHead("🪦 Nuzlocke", "nz-head")}<div class="lk-body">
+      <div class="pkm-dim">Only your first wild encounter in each map place can be caught, and Pokémon that faint are released after the battle (your last Pokémon is always kept).</div>
+      <div class="pkm-btns"><button type="button" class="pkm-btn2 ${on ? "danger" : "primary"}" data-a="toggle">${on ? "Turn Nuzlocke off" : "Turn Nuzlocke on…"}</button><span class="pkm-dim">${on ? `On · ${used} place${used === 1 ? "" : "s"} used` : "Off"}</span></div>
+      <div class="bag-sec"><span>Hardcore rules</span><span class="pkm-dim">only while Nuzlocke is on</span></div>
+      ${ruleBtn("noitems", "No items in battle", "Potions, Revives and X items can't be used in battle.")}
+      ${ruleBtn("lvcap", "Level cap", `Your Pokémon stop gaining XP at the next Gym Leader's level (Lv ${pkmAreaLevel()} now).`)}
+      <div class="bag-sec"><span>Graveyard</span><span class="pkm-dim">${grave.length}</span></div>
+      ${grave.length ? `<div class="nz-grave">${grave.map((g) => `<div class="nz-stone" title="${pkmEsc(pkmCap(g.n))} · ${new Date(g.t).toLocaleDateString()}"><img src="${pkmEsc(pkmMonSprite({ name: g.n }, dexArr))}" alt=""><b>${pkmEsc(pkmCap(g.n))}</b><span class="pkm-dim">${new Date(g.t).toLocaleDateString()}</span></div>`).join("")}</div>
+        <div class="pkm-btns"><button type="button" class="pkm-btn2" data-a="clear">Clear the graveyard</button></div>` : `<div class="pkm-dim">Nobody has been lost. Keep it that way.</div>`}</div>`;
+  }
+
+  // ---------- Trainer card: Ribbons tab ----------
+  {
+    const ob = pkmOpenBadges;
+    pkmOpenBadges = function (tab) {
+      const r = ob.apply(this, arguments);
+      const P = pkmBadgesPanel;
+      if (!P) return r;
+      const tabs = P.querySelector(".bag-tabs");
+      const party = getObj(STORAGE.party) || {};
+      const st = getObj(STORAGE.stats) || {};
+      const owners = Object.keys(party).filter((id) => (st[id] && st[id].ribbons || []).length);
+      const total = owners.reduce((n, id) => n + st[id].ribbons.length, 0);
+      if (tabs && !tabs.querySelector('[data-tab="ribbons"]')) tabs.insertAdjacentHTML("beforeend", `<button type="button" role="tab" data-tab="ribbons" aria-selected="${pkmBadgesTab === "ribbons"}">Ribbons <span class="bag-count">${total}</span></button>`);
+      if (pkmBadgesTab === "ribbons") {
+        tabs && tabs.querySelectorAll("[data-tab]").forEach((t) => t.setAttribute("aria-selected", String(t.dataset.tab === "ribbons")));
+        const dexArr = getArr(STORAGE.pokedex) || [];
+        const body = P.querySelector(".bc-body");
+        if (body) body.innerHTML = owners.length
+          ? `<div class="pkm-dim" style="margin-bottom:8px">Win 1st place in a Contest to earn a ribbon for that Pokémon.</div><div class="rb-list">${owners.map((id) => `<div class="rb-mon"><img src="${pkmEsc(pkmMonSprite(party[id], dexArr))}" alt=""><div><b>${pkmEsc(pkmCap(party[id].name))}</b> <span class="pkm-dim">Lv ${st[id].level || 1}</span>
+              <div class="rb-ribbons">${st[id].ribbons.map((x) => `<span class="rb-r" title="${pkmEsc(x)} Ribbon">🎀 ${pkmEsc(x)}</span>`).join("")}</div></div></div>`).join("")}</div>`
+          : `<div class="pkm-dim" style="text-align:center;padding:30px">No ribbons yet. Win 1st place in a 🎀 Contest to earn one.</div>`;
+      }
+      return r;
+    };
+  }
+
+  // ---------- Save codes (copy your whole save as text, restore it anywhere) ----------
+  async function pkmGz(bytes, mode) {
+    const s = new Blob([bytes]).stream().pipeThrough(mode === "c" ? new CompressionStream("gzip") : new DecompressionStream("gzip"));
+    return new Uint8Array(await new Response(s).arrayBuffer());
+  }
+  const pkmB64 = (u8) => { let s = ""; for (let i = 0; i < u8.length; i += 0x8000) s += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000)); return btoa(s); };
+  const pkmUnB64 = (t) => Uint8Array.from(atob(t), (c) => c.charCodeAt(0));
+  async function pkmMakeSaveCode() {
+    const raw = new TextEncoder().encode(JSON.stringify({ v: 1, t: Date.now(), data: pkmCollectSave() }));
+    if (typeof CompressionStream === "function") return `PKS1.${pkmB64(await pkmGz(raw, "c"))}`;
+    return `PKS0.${pkmB64(raw)}`;
+  }
+  async function pkmReadSaveCode(code) {
+    const c = String(code || "").replace(/\s+/g, "");
+    const m = /^PKS([01])\.([A-Za-z0-9+/=]+)$/.exec(c);
+    if (!m) throw new Error("That doesn't look like a save code (it should start with PKS1.).");
+    let bytes = pkmUnB64(m[2]);
+    if (m[1] === "1") bytes = await pkmGz(bytes, "d");
+    const obj = JSON.parse(new TextDecoder().decode(bytes));
+    if (!obj || typeof obj.data !== "object" || !obj.data) throw new Error("The save code is damaged.");
+    for (const k of Object.keys(obj.data)) if (!pkmIsSaveKey(k)) delete obj.data[k];
+    return obj;
+  }
+  let pkmSaveCodePanel = null;
+  function pkmCloseSaveCode() { if (pkmSaveCodePanel) pkmSaveCodePanel.remove(); pkmSaveCodePanel = null; }
+  function pkmOpenSaveCode() {
+    if (!pkmSaveCodePanel) pkmSaveCodePanel = pkmMakePanel("pkm-savecode", "Save code", async (e) => {
+      const a = e.target.closest("[data-a]")?.dataset.a;
+      const P = pkmSaveCodePanel;
+      if (a === "close") return pkmCloseSaveCode();
+      if (a === "make") {
+        const out = P.querySelector(".sc-out");
+        out.value = "Making your code…";
+        try { out.value = await pkmMakeSaveCode(); P.querySelector(".sc-len").textContent = `${out.value.length.toLocaleString()} characters`; out.select(); } catch (err) { out.value = ""; pkmToast("Couldn't make a save code."); console.warn(err); }
+      }
+      if (a === "copy") {
+        const out = P.querySelector(".sc-out");
+        if (!out.value.startsWith("PKS")) return pkmToast("Make a code first.");
+        try { await navigator.clipboard.writeText(out.value); pkmToast("Save code copied. Keep it somewhere safe."); } catch { out.select(); pkmToast("Press Ctrl+C to copy the selected code."); }
+      }
+      if (a === "restore") {
+        try {
+          const obj = await pkmReadSaveCode(P.querySelector(".sc-in").value);
+          pkmBackupNow("before save code");
+          pkmCloseSaveCode();
+          pkmPreviewSave(obj.data, `Save code from ${new Date(obj.t).toLocaleString()}`);
+        } catch (err) { pkmToast(err.message || "That save code didn't work.", 4000); }
+      }
+    });
+    pkmSaveCodePanel.innerHTML = `${pkmPanelHead("💾 Save code", "sc-head")}<div class="lk-body">
+      <div class="pkm-dim">A save code is your whole game as text. Paste it on another computer or browser to carry on there, or keep it as a backup. Anyone with the code can load your save, so don't post it publicly.</div>
+      <div class="bag-sec"><span>Your code</span><span class="pkm-dim sc-len"></span></div>
+      <textarea class="sc-out" readonly rows="4" aria-label="Your save code" placeholder="Press Make my code"></textarea>
+      <div class="pkm-btns"><button type="button" class="pkm-btn2 primary" data-a="make">Make my code</button><button type="button" class="pkm-btn2" data-a="copy">📋 Copy</button></div>
+      <div class="bag-sec"><span>Restore from a code</span></div>
+      <textarea class="sc-in" rows="4" aria-label="Paste a save code" placeholder="Paste a code that starts with PKS1."></textarea>
+      <div class="pkm-btns"><button type="button" class="pkm-btn2 danger" data-a="restore">Check and restore</button></div>
+      <div class="pkm-dim">You'll see what's in the code before anything changes, and your current save is backed up first (Settings → Backups).</div></div>`;
+  }
+
+  // ---------- Bag: select many Pokémon to release ----------
+  pkmBag.multi = false;
+  pkmBag.pick = new Set();
+  {
+    const dbg = drawBag;
+    drawBag = function () {
+      const r = dbg.apply(this, arguments);
+      if (!bagPanel || pkmBag.tab !== "pokemon") return r;
+      const tools = bagPanel.querySelector(".bag-tools");
+      const active = GM_getValue("pkm_starter_id");
+      if (tools && !tools.querySelector("[data-multi]")) tools.insertAdjacentHTML("afterbegin", `<button type="button" class="pkm-btn2 ${pkmBag.multi ? "primary" : ""}" data-multi="1" title="Pick many Pokémon to release at once">${pkmBag.multi ? "✓ Selecting" : "☑ Select many"}</button>`);
+      if (pkmBag.multi) {
+        bagPanel.querySelectorAll(".bag-slot[data-id]").forEach((s) => { if (pkmBag.pick.has(s.dataset.id)) s.classList.add("picked"); if (s.dataset.id === active) s.classList.add("nopick"); });
+        const det = bagPanel.querySelector(".bag-detail");
+        const n = pkmBag.pick.size;
+        const html = `<div class="bag-detail bag-multi"><div><b>${n} selected</b><div class="pkm-dim">Click Pokémon to pick them. Your active partner can't be released. Held items go back to your Bag.</div></div>
+          <div class="pkm-btns"><button type="button" class="pkm-btn2 danger" data-mr="release" ${n ? "" : "disabled"}>${pkmBag.multiAsk ? `Sure? Release ${n} for good` : `Release ${n || ""}`}</button><button type="button" class="pkm-btn2" data-mr="clear" ${n ? "" : "disabled"}>Clear</button><button type="button" class="pkm-btn2" data-mr="done">Done</button></div></div>`;
+        if (det) det.outerHTML = html;
+      }
+      const orig = bagPanel.onclick;
+      bagPanel.onclick = (e) => {
+        if (e.target.closest("[data-multi]")) { pkmBag.multi = !pkmBag.multi; pkmBag.pick = new Set(); pkmBag.multiAsk = false; return drawBag(); }
+        if (pkmBag.multi) {
+          const mr = e.target.closest("[data-mr]")?.dataset.mr;
+          if (mr === "done") { pkmBag.multi = false; pkmBag.pick = new Set(); pkmBag.multiAsk = false; return drawBag(); }
+          if (mr === "clear") { pkmBag.pick = new Set(); pkmBag.multiAsk = false; return drawBag(); }
+          if (mr === "release") {
+            if (!pkmBag.multiAsk) { pkmBag.multiAsk = true; return drawBag(); }
+            const party = getObj(STORAGE.party) || {}; const st = getObj(STORAGE.stats) || {};
+            let n = 0;
+            for (const id of pkmBag.pick) {
+              if (id === active || !party[id] || Object.keys(party).length <= 1) continue;
+              if (party[id].held) setInt(`pkm_item_${party[id].held}`, getInt(`pkm_item_${party[id].held}`) + 1);
+              delete party[id]; delete st[id]; n++;
+            }
+            setObj(STORAGE.party, party); setObj(STORAGE.stats, st);
+            pkmBag.pick = new Set(); pkmBag.multiAsk = false; pkmBag.sel = null;
+            pkmToast(`Released ${n} Pokémon.`);
+            return drawBag();
+          }
+          const slot = e.target.closest(".bag-slot[data-id]");
+          if (slot) {
+            const id = slot.dataset.id;
+            if (id === active) return pkmToast("Your active partner can't be released.");
+            pkmBag.pick.has(id) ? pkmBag.pick.delete(id) : pkmBag.pick.add(id);
+            pkmBag.multiAsk = false;
+            return drawBag();
+          }
+        }
+        return orig && orig.call(bagPanel, e);
+      };
+      return r;
+    };
+  }
+
+  // ---------- Panels ----------
+  PKM_PANELS.push(["nuzlocke", () => pkmNuzPanel, () => pkmCloseNuzlocke()], ["savecode", () => pkmSaveCodePanel, () => pkmCloseSaveCode()]);
+  pkmOpenNuzlocke = pkmExclusive("nuzlocke", pkmOpenNuzlocke);
+  pkmOpenSaveCode = pkmExclusive("savecode", pkmOpenSaveCode);
+
+  pkmStyle(`
+    .pkm-upd-banner{position:fixed;left:50%;top:10px;transform:translateX(-50%);z-index:10010;display:flex;gap:8px;align-items:center;flex-wrap:wrap;max-width:min(640px,94vw);
+      background:rgba(17,20,33,.97);color:#e8eaf6;border:1px solid rgba(47,191,113,.6);border-radius:12px;padding:8px 10px;box-shadow:0 10px 30px rgba(0,0,0,.45);font:13px system-ui,sans-serif}
+    .pkm-upd-banner .pkm-x{position:static!important}
+    .pkm-launcher.has-upd::after{content:"";position:absolute;right:4px;top:4px;width:9px;height:9px;border-radius:50%;background:#2fbf71;box-shadow:0 0 0 2px #111421}
+    .op-upd{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;padding:10px;border-radius:12px;background:rgba(47,191,113,.12);border:1px solid rgba(47,191,113,.35);margin-bottom:10px}
+    .pkm-set.pkm-nuz,.pkm-set.pkm-savecode{width:min(620px,96vw);max-height:92vh;overflow:auto}
+    .nz-head{background:linear-gradient(90deg,#5a5a6a,#2a2a3a)!important}.sc-head{background:linear-gradient(90deg,#3a6aa0,#1a3a6a)!important}
+    .nz-rule{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid rgba(127,127,127,.15)}
+    .nz-grave{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:6px}
+    .nz-stone{display:flex;flex-direction:column;align-items:center;padding:6px;border-radius:10px 10px 4px 4px;background:rgba(127,127,127,.15);filter:grayscale(1);font-size:12px}
+    .nz-stone img{width:56px;height:56px;image-rendering:pixelated}
+    .pkm-savecode textarea{width:100%;box-sizing:border-box;font:11px ui-monospace,monospace;border-radius:8px;padding:6px;resize:vertical}
+    .rb-list{display:grid;gap:8px}.rb-mon{display:flex;gap:8px;align-items:center}.rb-mon img{width:56px;height:56px;image-rendering:pixelated}
+    .rb-ribbons{display:flex;flex-wrap:wrap;gap:4px;margin-top:3px}.rb-r{font-size:11.5px;padding:2px 7px;border-radius:999px;background:rgba(255,105,180,.18);border:1px solid rgba(255,105,180,.4)}
+    .bag-slot.picked{outline:3px solid #ff4d4f;outline-offset:-3px}.bag-slot.picked::after{content:"✓";position:absolute;right:4px;bottom:4px;background:#ff4d4f;color:#fff;border-radius:50%;width:18px;height:18px;display:grid;place-items:center;font-size:12px}
+    .bag-slot.nopick{opacity:.6}
+    .bag-multi{display:flex!important;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+  `, "pkm-v41");
+  // =====================================================================
+  //  4.2: online GTS trades, Pokémon Home and Wonder Trade (server at
+  //  dstokesncstudio.com/poke/api/), Pokémon Camp, Hidden Grottos and
+  //  hordes, Ultra Wormholes, villain teams, species progress, day/night
+  //  tint, move animations, Gym puzzles and trainer looks
+  // =====================================================================
+
+  // ---------- Server connection ----------
+  const PKM_SERVER_DEFAULT = "https://dstokesncstudio.com/poke/api/";
+  const pkmServerUrl = () => { const u = String(GM_getValue("pkm_server_url", "") || "").trim(); return /^https?:\/\//.test(u) ? (u.endsWith("/") ? u : `${u}/`) : PKM_SERVER_DEFAULT; };
+  const pkmOnline = () => pkmJSON("pkm_online", null);
+  /** One API call: POST JSON to <server>?a=<action>. Resolves with the reply, rejects with a readable message. */
+  function pkmApi(a, data = {}, acctOverride) {
+    const acct = acctOverride || pkmOnline() || {};
+    const body = JSON.stringify({ ...data, pid: acct.pid, sec: acct.sec });
+    return new Promise((resolve, reject) => {
+      const fail = (m) => reject(new Error(m));
+      try {
+        GM_xmlhttpRequest({
+          method: "POST",
+          url: `${pkmServerUrl()}?a=${encodeURIComponent(a)}`,
+          headers: { "Content-Type": "application/json" },
+          data: body,
+          timeout: 15000,
+          responseType: "text",
+          onload: (r) => {
+            let j = null;
+            try { j = JSON.parse(r.responseText); } catch {}
+            if (!j) return fail(r.status === 404 ? "The game server isn't set up yet." : `The server answered with an error (${r.status}).`);
+            if (!j.ok) { if (r.status === 401 && /not found/i.test(j.error || "")) GM_deleteValue("pkm_online"); return fail(j.error || "Server error."); }
+            resolve(j);
+          },
+          onerror: () => fail("Couldn't reach the game server. It may be offline."),
+          ontimeout: () => fail("The game server took too long to answer."),
+        });
+      } catch (e) { fail("Couldn't reach the game server."); }
+    });
+  }
+  async function pkmOnlineLogin() {
+    if (pkmOnline()) return pkmOnline();
+    const r = await pkmApi("register", { name: pkmTrainerName() });
+    const acct = { pid: r.pid, sec: r.sec, name: r.name };
+    pkmSave("pkm_online", acct);
+    return acct;
+  }
+  const pkmLinkCode = () => { const a = pkmOnline(); return a ? `PKH1.${a.pid}.${a.sec}` : ""; };
+  async function pkmUseLinkCode(code) {
+    const m = /^PKH1\.(\d{1,10})\.([a-f0-9]{64})$/.exec(String(code || "").trim());
+    if (!m) throw new Error("That isn't an account link code (it starts with PKH1.).");
+    const old = pkmOnline();
+    pkmSave("pkm_online", { pid: +m[1], sec: m[2] });
+    try { const r = await pkmApi("me"); pkmSave("pkm_online", { pid: r.pid, sec: m[2], name: r.name }); return r; } catch (e) { pkmSave("pkm_online", old); throw e; }
+  }
+
+  // ---------- Moving Pokémon in and out of the Bag ----------
+  /** A Pokémon packed for the server (no held item), or an error message. */
+  function pkmPackForSend(id) {
+    const party = getObj(STORAGE.party) || {};
+    if (!party[id]) return { err: "That Pokémon isn't in your Bag." };
+    if (id === GM_getValue("pkm_starter_id")) return { err: "Your active partner can't leave. Pick another partner first." };
+    if (Object.keys(party).length <= 1) return { err: "You can't send away your last Pokémon." };
+    const mon = pkmMonShare(id);
+    mon.h = "";
+    mon.g = pkmGenderOf(id);
+    return { mon };
+  }
+  function pkmRemoveMon(id) {
+    const party = getObj(STORAGE.party) || {};
+    const st = getObj(STORAGE.stats) || {};
+    if (party[id] && party[id].held) setInt(`pkm_item_${party[id].held}`, getInt(`pkm_item_${party[id].held}`) + 1);
+    delete party[id]; delete st[id];
+    setObj(STORAGE.party, party); setObj(STORAGE.stats, st);
+  }
+  /** Adds a Pokémon that came from the server (checked again here) and returns its id. */
+  async function pkmReceiveMon(x, source = "trade") {
+    const m = pkmCleanShare(x);
+    if (!m) throw new Error("The Pokémon that came back wasn't valid.");
+    const id = await pkmAddShared({ ...m, held: null });
+    if (!id) throw new Error("Couldn't load that Pokémon from PokéAPI. Try again.");
+    const all = getObj(STORAGE.stats) || {};
+    if (all[id] && ["male", "female", "none"].includes(x.g)) { all[id].gender = x.g; setObj(STORAGE.stats, all); }
+    const party = getObj(STORAGE.party) || {};
+    if (party[id] && source !== "trade") { party[id].origin = source; setObj(STORAGE.party, party); }
+    return id;
+  }
+  /** Pokémon that arrive are saved in an inbox first, so a PokéAPI hiccup can't lose them. */
+  async function pkmInboxFlush() {
+    const q = pkmJSON("pkm_online_inbox", []);
+    if (!q.length) return 0;
+    const left = [];
+    for (const it of q) { try { await pkmReceiveMon(it.mon, it.source); } catch { left.push(it); } }
+    pkmSave("pkm_online_inbox", left);
+    return q.length - left.length;
+  }
+  async function pkmDeliver(mon, source) {
+    const q = pkmJSON("pkm_online_inbox", []);
+    q.push({ mon, source, t: Date.now() });
+    pkmSave("pkm_online_inbox", q);
+    await pkmInboxFlush();
+    if (pkmJSON("pkm_online_inbox", []).length) throw new Error("Your new Pokémon is safe and will arrive the next time you open 🌐 Online (PokéAPI didn't answer).");
+  }
+  const pkmShareLabel = (m) => `${pkmCap(m.s)}${m.x ? " ✨" : ""} Lv ${m.l}${m.g === "female" ? " ♀" : m.g === "male" ? " ♂" : ""}`;
+  const pkmShareSprite = (m) => { const id = pkmDexId(m.s); return id ? `${PKM_SPRITES}${m.x ? "shiny/" : ""}${id}.png` : `${PKM_ITEM_IMG}poke-ball.png`; };
+  /** <option>s for every Pokémon you could send (not the active partner). */
+  function pkmSendOptions(filter) {
+    const party = getObj(STORAGE.party) || {};
+    const st = getObj(STORAGE.stats) || {};
+    const active = GM_getValue("pkm_starter_id");
+    return Object.entries(party).filter(([id, p]) => id !== active && (!filter || String(p.name).toLowerCase() === filter))
+      .map(([id, p]) => `<option value="${pkmEsc(id)}">${pkmEsc(pkmCap(p.name))}${p.isShiny ? " ✨" : ""} (Lv ${(st[id] || {}).level || 1})</option>`).join("");
+  }
+
+  // ---------- Wonder Trade: offline list (used when the server can't be reached) ----------
+  const PKM_WONDER_LOCAL = ["pikachu", "eevee", "magikarp", "bulbasaur", "charmander", "squirtle", "chikorita", "cyndaquil", "totodile", "treecko", "torchic", "mudkip", "turtwig", "chimchar", "piplup", "snivy", "tepig", "oshawott",
+    "chespin", "fennekin", "froakie", "rowlet", "litten", "popplio", "grookey", "scorbunny", "sobble", "dratini", "larvitar", "bagon", "beldum", "gible", "axew", "deino", "goomy", "jangmo-o", "dreepy", "riolu", "ralts", "abra",
+    "gastly", "machop", "geodude", "growlithe", "vulpix", "ponyta", "slowpoke", "onix", "scyther", "lapras", "snorlax", "togepi", "mareep", "wooper", "sneasel", "houndour", "phanpy", "aron", "shroomish", "trapinch", "swablu",
+    "feebas", "absol", "spheal", "shinx", "buneary", "zorua", "litwick", "rockruff", "sandshrew", "applin", "rookidee", "yamper", "sprigatito", "fuecoco", "quaxly", "tinkatink"];
+  async function pkmWonderLocal(sent) {
+    const sp = pkmPick(PKM_WONDER_LOCAL);
+    const lv = pkmClamp(sent.l + pkmRand(-4, 4), 1, MAX_LEVEL);
+    return { s: sp, l: lv, i: pkmRand(5, 31), n: pkmPick(Object.keys(PKM_NATURES)), a: "", m: [], h: "", x: Math.random() < 1 / 64 ? 1 : 0, g: "" };
+  }
+
+  // ---------- Online panel: GTS, Home, Wonder Trade ----------
+  let pkmOnlinePanel = null;
+  let pkmOnlineTab = "gts";
+  let pkmOnlineData = { gts: null, mine: null, home: null, wonder: null, err: "" };
+  let pkmOnlineSearch = "";
+  function pkmCloseOnline() { if (pkmOnlinePanel) pkmOnlinePanel.remove(); pkmOnlinePanel = null; }
+  async function pkmOnlineRefresh() {
+    pkmOnlineData.err = "";
+    try {
+      if (!pkmOnline()) return;
+      if (pkmOnlineTab === "gts") {
+        const [a, b] = await Promise.all([pkmApi("trade_list", { species: pkmOnlineSearch }), pkmApi("trade_mine")]);
+        pkmOnlineData.gts = a.trades; pkmOnlineData.mine = b.trades;
+      } else if (pkmOnlineTab === "home") {
+        pkmOnlineData.home = await pkmApi("home_list");
+      } else {
+        pkmOnlineData.wonder = (await pkmApi("wonder_mine")).wonder;
+      }
+    } catch (e) { pkmOnlineData.err = e.message; }
+  }
+  const pkmShareCard = (m, extra = "") => `<div class="ol-card"><img src="${pkmEsc(pkmShareSprite(m))}" alt="" loading="lazy"><div class="ol-main"><b>${pkmEsc(pkmShareLabel(m))}</b>${extra}</div></div>`;
+  function pkmDrawOnline() {
+    const P = pkmOnlinePanel;
+    if (!P) return;
+    const acct = pkmOnline();
+    const d = pkmOnlineData;
+    const tab = (k, l) => `<button type="button" role="tab" data-otab="${k}" aria-selected="${pkmOnlineTab === k}">${l}</button>`;
+    let body = "";
+    if (!acct) {
+      body = `<div class="pkm-dim">Trade with players everywhere, keep Pokémon in your Home box and use them in another browser, and send Pokémon to Wonder Trade. Your trainer name (${pkmEsc(pkmTrainerName())}) is shown to other players.</div>
+        <div class="pkm-btns"><button type="button" class="pkm-btn2 primary" data-a="login">🌐 Connect to the game server</button></div>
+        <div class="bag-sec"><span>Already have an account in another browser?</span></div>
+        <div class="pkm-btns"><input class="ol-link" placeholder="Paste a PKH1. link code" aria-label="Account link code"><button type="button" class="pkm-btn2" data-a="uselink">Use this account</button></div>
+        <div class="pkm-dim">Wonder Trade also works without the server: you'll get a random Pokémon from a list instead of from another player.</div>`;
+    } else if (pkmOnlineTab === "gts") {
+      const opts = pkmSendOptions();
+      body = `<div class="bag-sec"><span>Offer a Pokémon</span></div>
+        <div class="pkm-btns"><select class="ol-give" aria-label="Pokémon to offer">${opts || `<option value="">No Pokémon to offer</option>`}</select><input class="ol-want" placeholder="Want (optional, e.g. eevee)" aria-label="Pokémon you want" maxlength="40"><button type="button" class="pkm-btn2 primary" data-a="offer" ${opts ? "" : "disabled"}>Put on the GTS</button></div>
+        ${(d.mine || []).length ? `<div class="bag-sec"><span>Your offers</span></div>${d.mine.map((t) => pkmShareCard(t.mon, t.status === "done" ? `<div class="ol-done">✅ Traded to ${pkmEsc(t.taker || "a trainer")} for ${pkmEsc(pkmShareLabel(t.got || { s: "?", l: 1 }))}</div><button type="button" class="pkm-btn2 primary" data-claim="${t.id}">Collect</button>` : `<div class="pkm-dim">${t.want ? `Wants ${pkmEsc(pkmCap(t.want))}` : "Any Pokémon"} · waiting</div><button type="button" class="pkm-btn2" data-cancel="${t.id}">Take back</button>`)).join("")}` : ""}
+        <div class="bag-sec"><span>Offers from other trainers</span><span class="pkm-btns"><input class="ol-search" placeholder="Find a species" value="${pkmEsc(pkmOnlineSearch)}" aria-label="Find a species"><button type="button" class="pkm-btn2" data-a="search">🔎</button></span></div>
+        ${(d.gts || []).length ? d.gts.map((t) => { const mineOpts = pkmSendOptions(t.want || ""); return pkmShareCard(t.mon, `<div class="pkm-dim">From ${pkmEsc(t.owner)} · ${t.want ? `wants ${pkmEsc(pkmCap(t.want))}` : "wants any Pokémon"}</div>
+            <div class="pkm-btns"><select class="ol-pay" data-for="${t.id}" aria-label="Pokémon to give">${mineOpts || `<option value="">You don't have one</option>`}</select><button type="button" class="pkm-btn2 primary" data-take="${t.id}" ${mineOpts ? "" : "disabled"}>Trade</button></div>`); }).join("") : `<div class="pkm-dim">${d.gts ? "No offers right now. Put one up and check back later." : "Loading…"}</div>`}`;
+    } else if (pkmOnlineTab === "home") {
+      const h = d.home || { home: [], max: 60 };
+      const opts = pkmSendOptions();
+      body = `<div class="pkm-dim">Pokémon in Home are kept on the server. Open the game in another browser, use your link code there, and take them out.</div>
+        <div class="pkm-btns"><select class="ol-give" aria-label="Pokémon to put in Home">${opts || `<option value="">No Pokémon to move</option>`}</select><button type="button" class="pkm-btn2 primary" data-a="deposit" ${opts ? "" : "disabled"}>Move to Home</button><span class="pkm-dim">${(h.home || []).length}/${h.max}</span></div>
+        ${(h.home || []).length ? `<div class="ol-grid">${h.home.map((r) => `<div class="ol-tile"><img src="${pkmEsc(pkmShareSprite(r.mon))}" alt=""><b>${pkmEsc(pkmShareLabel(r.mon))}</b><button type="button" class="pkm-btn2" data-out="${r.id}">Take out</button></div>`).join("")}</div>` : `<div class="pkm-dim">${d.home ? "Your Home box is empty." : "Loading…"}</div>`}
+        <div class="bag-sec"><span>Use this account in another browser</span></div>
+        <div class="pkm-btns"><input class="ol-mylink" readonly value="${pkmEsc(pkmLinkCode())}" aria-label="Your link code" style="flex:1"><button type="button" class="pkm-btn2" data-a="copylink">📋 Copy</button></div>
+        <div class="pkm-dim">Keep the link code private: anyone with it can use your Home box and trades.</div>`;
+    } else {
+      const opts = pkmSendOptions();
+      body = `<div class="pkm-dim">Send a Pokémon and get a random one back from another player. If nobody is waiting, yours waits for the next trainer and you collect your new Pokémon here later.</div>
+        <div class="pkm-btns"><select class="ol-give" aria-label="Pokémon to send">${opts || `<option value="">No Pokémon to send</option>`}</select><button type="button" class="pkm-btn2 primary" data-a="wonder" ${opts ? "" : "disabled"}>🎲 Wonder Trade</button></div>
+        ${(d.wonder || []).map((w) => pkmShareCard(w.mon, w.matched ? `<div class="ol-done">✅ ${pkmEsc(w.from || "A trainer")} sent you ${pkmEsc(pkmShareLabel(w.got || { s: "?", l: 1 }))}</div><button type="button" class="pkm-btn2 primary" data-wclaim="${w.id}">Collect</button>` : `<div class="pkm-dim">Waiting for a trainer…</div><button type="button" class="pkm-btn2" data-wcancel="${w.id}">Take back</button>`)).join("")}`;
+    }
+    P.innerHTML = `${pkmPanelHead("🌐 Online", "ol-head")}
+      <div class="bag-tabs" role="tablist">${tab("gts", "🌍 GTS trades")}${tab("home", "🏠 Home box")}${tab("wonder", "🎲 Wonder Trade")}</div>
+      <div class="lk-body">${acct ? `<div class="pkm-dim ol-acct">Signed in as <b>${pkmEsc(acct.name || pkmTrainerName())}</b> · <button type="button" class="pkm-btn2" data-a="refresh">🔄 Refresh</button></div>` : ""}
+      ${d.err ? `<div class="bag-msg ol-err">⚠️ ${pkmEsc(d.err)}</div>` : ""}${body}</div>`;
+  }
+  let pkmOnlineBusy = 0;
+  async function pkmOnlineDo(fn) {
+    pkmOnlineBusy++;
+    if (pkmOnlinePanel) pkmOnlinePanel.classList.add("busy");
+    try { await fn(); } catch (e) { pkmOnlineData.err = e.message || String(e); } finally { pkmOnlineBusy--; if (pkmOnlinePanel && !pkmOnlineBusy) pkmOnlinePanel.classList.remove("busy"); }
+    if (bagPanel) drawBag();
+    pkmDrawOnline();
+  }
+  async function pkmOpenOnline(tab) {
+    if (typeof tab === "string") pkmOnlineTab = tab;
+    if (!pkmOnlinePanel) {
+      pkmOnlinePanel = pkmMakePanel("pkm-online", "Online", (e) => {
+        const P = pkmOnlinePanel;
+        const g = (k) => e.target.closest(`[${k}]`);
+        const a = g("data-a")?.dataset.a;
+        if (a === "close") return pkmCloseOnline();
+        if (g("data-otab")) { pkmOnlineTab = g("data-otab").dataset.otab; pkmDrawOnline(); return pkmOnlineDo(pkmOnlineRefresh); }
+        if (a === "login") return pkmOnlineDo(async () => { await pkmOnlineLogin(); pkmToast("🌐 Connected to the game server."); await pkmOnlineRefresh(); });
+        if (a === "uselink") return pkmOnlineDo(async () => { const r = await pkmUseLinkCode(P.querySelector(".ol-link").value); pkmToast(`Signed in as ${r.name}.`); await pkmOnlineRefresh(); });
+        if (a === "copylink") { const i = P.querySelector(".ol-mylink"); i.select(); navigator.clipboard?.writeText(i.value).then(() => pkmToast("Link code copied."), () => pkmToast("Press Ctrl+C to copy.")); return; }
+        if (a === "refresh") return pkmOnlineDo(pkmOnlineRefresh);
+        if (a === "search") { pkmOnlineSearch = pkmSafeSlug(P.querySelector(".ol-search").value.trim().toLowerCase()) || ""; return pkmOnlineDo(pkmOnlineRefresh); }
+        if (a === "offer") return pkmOnlineDo(async () => {
+          const id = P.querySelector(".ol-give").value;
+          const p = pkmPackForSend(id);
+          if (p.err) throw new Error(p.err);
+          const want = pkmSafeSlug(P.querySelector(".ol-want").value.trim().toLowerCase()) || "";
+          await pkmApi("trade_create", { mon: p.mon, want });
+          pkmRemoveMon(id);
+          pkmToast(`${pkmCap(p.mon.s)} is on the GTS now. Check back to collect your trade.`, 4000);
+          await pkmOnlineRefresh();
+        });
+        if (g("data-take")) return pkmOnlineDo(async () => {
+          const tid = +g("data-take").dataset.take;
+          const id = P.querySelector(`.ol-pay[data-for="${tid}"]`).value;
+          const p = pkmPackForSend(id);
+          if (p.err) throw new Error(p.err);
+          const r = await pkmApi("trade_accept", { id: tid, mon: p.mon });
+          pkmRemoveMon(id);
+          await pkmDeliver(r.mon, "trade");
+          pkmTrack("trades"); playSound("evolve");
+          pkmToast(`🔄 You traded ${pkmCap(p.mon.s)} for ${pkmShareLabel(r.mon)}!`, 5000);
+          await pkmOnlineRefresh();
+        });
+        if (g("data-claim")) return pkmOnlineDo(async () => {
+          const r = await pkmApi("trade_claim", { id: +g("data-claim").dataset.claim });
+          await pkmDeliver(r.mon, "trade");
+          pkmTrack("trades"); playSound("evolve");
+          pkmToast(`🔄 ${r.from || "A trainer"} traded you ${pkmShareLabel(r.mon)}!`, 5000);
+          await pkmOnlineRefresh();
+        });
+        if (g("data-cancel")) return pkmOnlineDo(async () => { const r = await pkmApi("trade_cancel", { id: +g("data-cancel").dataset.cancel }); await pkmDeliver(r.mon, "trade"); pkmToast(`${pkmCap(r.mon.s)} came back from the GTS.`); await pkmOnlineRefresh(); });
+        if (a === "deposit") return pkmOnlineDo(async () => {
+          const id = P.querySelector(".ol-give").value;
+          const p = pkmPackForSend(id);
+          if (p.err) throw new Error(p.err);
+          await pkmApi("home_deposit", { mon: p.mon });
+          pkmRemoveMon(id);
+          pkmToast(`${pkmCap(p.mon.s)} moved to your Home box.`);
+          await pkmOnlineRefresh();
+        });
+        if (g("data-out")) return pkmOnlineDo(async () => { const r = await pkmApi("home_withdraw", { id: +g("data-out").dataset.out }); await pkmDeliver(r.mon, "home"); pkmToast(`${pkmShareLabel(r.mon)} came out of Home.`); await pkmOnlineRefresh(); });
+        if (a === "wonder") return pkmOnlineDo(() => pkmWonderSend(P.querySelector(".ol-give").value));
+        if (g("data-wclaim")) return pkmOnlineDo(async () => { const r = await pkmApi("wonder_claim", { id: +g("data-wclaim").dataset.wclaim }); await pkmDeliver(r.mon, "wonder"); pkmToast(`🎲 ${r.from || "A trainer"} sent you ${pkmShareLabel(r.mon)}!`, 5000); await pkmOnlineRefresh(); });
+        if (g("data-wcancel")) return pkmOnlineDo(async () => { const r = await pkmApi("wonder_cancel", { id: +g("data-wcancel").dataset.wcancel }); await pkmDeliver(r.mon, "wonder"); await pkmOnlineRefresh(); });
+      });
+    }
+    pkmOnlineData = { gts: null, mine: null, home: null, wonder: null, err: "" };
+    pkmDrawOnline();
+    await pkmOnlineDo(async () => { const n = await pkmInboxFlush(); if (n) pkmToast(`📬 ${n} Pokémon from earlier trades arrived in your Bag.`); await pkmOnlineRefresh(); });
+  }
+  /** Wonder Trade: through the server when signed in, otherwise from the offline list. */
+  async function pkmWonderSend(id) {
+    const p = pkmPackForSend(id);
+    if (p.err) throw new Error(p.err);
+    let r = null;
+    if (pkmOnline()) {
+      try { r = await pkmApi("wonder_send", { mon: p.mon }); } catch (e) { if (!/reach|too long|isn't set up/.test(e.message)) throw e; }
+    }
+    pkmRemoveMon(id);
+    if (r && !r.matched) { pkmToast(`🎲 ${pkmCap(p.mon.s)} is waiting for a trainer. Collect your new Pokémon in Online → Wonder Trade later.`, 5000); await pkmOnlineRefresh(); return; }
+    const got = r ? r.mon : await pkmWonderLocal(p.mon);
+    await pkmDeliver(got, "wonder");
+    pkmTrack("trades"); playSound("evolve");
+    pkmToast(`🎲 Wonder Trade! You sent ${pkmCap(p.mon.s)} and got ${pkmShareLabel(got)}${r && r.from ? ` from ${r.from}` : ""}!`, 5000);
+    if (pkmOnline()) await pkmOnlineRefresh();
+  }
+  // Tell the player once per page when an online trade is ready to collect
+  setTimeout(async () => {
+    if (!pkmOnline() || document.hidden) return;
+    try {
+      const [t, w] = await Promise.all([pkmApi("trade_mine"), pkmApi("wonder_mine")]);
+      const n = t.trades.filter((x) => x.status === "done").length + w.wonder.filter((x) => x.matched).length;
+      if (n) pkmToast(`🌐 ${n} online trade${n > 1 ? "s are" : " is"} ready. Open 🌐 Online to collect.`, 6000);
+    } catch {}
+  }, 9000);
+
+  // ---------- Pokémon Camp (pet, feed and play to raise friendship) ----------
+  let pkmCampPanel = null;
+  let pkmCampSel = null;
+  const PKM_CAMP_LIMITS = { pet: 10, feed: 5, play: 5 };
+  const pkmCampDay = () => { const c = pkmJSON("pkm_camp", {}); return c.day === pkmDay(0) ? c : { day: pkmDay(0), n: {} }; };
+  function pkmCloseCamp() { if (pkmCampPanel) pkmCampPanel.remove(); pkmCampPanel = null; }
+  function pkmCampAct(id, kind) {
+    const c = pkmCampDay();
+    const used = (c.n[id] = c.n[id] || { pet: 0, feed: 0, play: 0 });
+    if (used[kind] >= PKM_CAMP_LIMITS[kind]) return `That's enough ${kind === "pet" ? "petting" : kind === "feed" ? "treats" : "play"} for today.`;
+    if (kind === "feed") { if (getInt(STORAGE.coins) < 50) return "A Poké Puff costs 50 coins."; setInt(STORAGE.coins, getInt(STORAGE.coins) - 50); }
+    used[kind]++;
+    pkmSave("pkm_camp", c);
+    pkmFriend(id, kind === "pet" ? 1 : kind === "feed" ? 4 : 2);
+    pkmTrack("campCare");
+    return "";
+  }
+  function pkmOpenCamp() {
+    if (!pkmCampPanel) pkmCampPanel = pkmMakePanel("pkm-camp", "Pokémon Camp", (e) => {
+      const a = e.target.closest("[data-a]")?.dataset.a;
+      const pick = e.target.closest("[data-camp]");
+      if (a === "close") return pkmCloseCamp();
+      if (pick) { pkmCampSel = pick.dataset.camp; return pkmOpenCamp(); }
+      const act = e.target.closest("[data-care]")?.dataset.care;
+      if (act && pkmCampSel) {
+        const err = pkmCampAct(pkmCampSel, act);
+        if (err) return pkmToast(err);
+        const spr = pkmCampPanel.querySelector(".cp-big");
+        pkmOpenCamp();
+        const big = pkmCampPanel.querySelector(".cp-big");
+        if (big && spr) { big.classList.add(act === "pet" ? "cp-wiggle" : act === "feed" ? "cp-hop" : "cp-spin"); big.insertAdjacentHTML("afterend", `<div class="cp-heart">${act === "feed" ? "🧁💕" : act === "play" ? "⚽💕" : "💕"}</div>`); }
+      }
+    });
+    const party = getObj(STORAGE.party) || {};
+    const st = getObj(STORAGE.stats) || {};
+    const ids = Object.keys(party).slice(0, PKM_PARTY_SIZE);
+    if (!ids.includes(pkmCampSel)) pkmCampSel = ids[0] || null;
+    const dexArr = getArr(STORAGE.pokedex) || [];
+    const c = pkmCampDay();
+    const sel = pkmCampSel && party[pkmCampSel];
+    const f = sel ? ((st[pkmCampSel] || {}).friendship == null ? 70 : st[pkmCampSel].friendship) : 0;
+    const used = (pkmCampSel && c.n[pkmCampSel]) || { pet: 0, feed: 0, play: 0 };
+    const hearts = Math.round((f / 255) * 5);
+    pkmCampPanel.innerHTML = `${pkmPanelHead("⛺ Pokémon Camp", "cp-head")}<div class="lk-body">
+      <div class="pkm-dim">Pet, feed and play with your party to raise friendship. Friendship helps some Pokémon evolve.</div>
+      <div class="cp-party">${ids.map((id) => `<button type="button" class="cp-pick${id === pkmCampSel ? " on" : ""}" data-camp="${pkmEsc(id)}" aria-pressed="${id === pkmCampSel}"><img src="${pkmEsc(pkmMonSprite(party[id], dexArr))}" alt=""><span>${pkmEsc(pkmCap(party[id].name))}</span></button>`).join("")}</div>
+      ${sel ? `<div class="cp-stage"><img class="cp-big" src="${pkmEsc(pkmMonSprite(sel, dexArr))}" alt="${pkmEsc(pkmCap(sel.name))}"></div>
+        <div class="cp-f"><b>${pkmEsc(pkmCap(sel.name))}</b> <span title="Friendship ${f}/255">${"❤️".repeat(hearts)}${"🤍".repeat(5 - hearts)}</span> <span class="pkm-dim">${f}/255</span></div>
+        <div class="pkm-btns" style="justify-content:center">
+          <button type="button" class="pkm-btn2 primary" data-care="pet">✋ Pet (${PKM_CAMP_LIMITS.pet - used.pet} left)</button>
+          <button type="button" class="pkm-btn2 primary" data-care="feed">🧁 Poké Puff, 50 coins (${PKM_CAMP_LIMITS.feed - used.feed} left)</button>
+          <button type="button" class="pkm-btn2 primary" data-care="play">⚽ Play (${PKM_CAMP_LIMITS.play - used.play} left)</button></div>` : `<div class="pkm-dim">Choose a starter first.</div>`}</div>`;
+  }
+
+  // ---------- Hidden Grottos and hordes on map walks ----------
+  let pkmHordeNext = false;
+  {
+    const ew = pkmExploreWalk;
+    pkmExploreWalk = async function () {
+      const z = pkmExploreZone;
+      if (!z || battlePanel || pkmExploreBusy) return ew.apply(this, arguments);
+      const forceG = GM_getValue("pkm_grotto_force", "");
+      const r = Math.random();
+      if (forceG === "grotto" || (!forceG && r < 0.04)) {
+        const name = pkmPick(z.pool);
+        pkmForcedWild = { name, level: pkmClamp(Math.round((z.lv[0] + z.lv[1]) / 2) + 3, 2, MAX_LEVEL), hidden: true };
+        pkmPostBattle = () => pkmOpenExplore(z.id);
+        pkmCloseExplore();
+        pkmToast("🌿 You found a Hidden Grotto! A rare Pokémon with its hidden ability is inside.", 3500);
+        openBattle();
+        if (!battlePanel) { pkmForcedWild = null; pkmPostBattle = null; pkmOpenExplore(z.id); }
+        return;
+      }
+      const party = getObj(STORAGE.party) || {};
+      const lead = (getObj(STORAGE.stats) || {})[GM_getValue("pkm_starter_id")] || {};
+      pkmHordeNext = Object.keys(party).length && (lead.currentHP == null || lead.currentHP > 0) && (forceG === "horde" || (!forceG && r < 0.10)) ? z.id : false;
+      const out = await ew.apply(this, arguments);
+      if (!battlePanel) pkmHordeNext = false;
+      return out;
+    };
+    const pw = pkmPickWild;
+    pkmPickWild = async function () {
+      const f = pkmForcedWild;
+      const m = await pw.apply(this, arguments);
+      if (m && f && f.hidden) {
+        const d = await pkmPokemonData(m.name).catch(() => null);
+        const hid = d && (d.abilities || []).find((x) => x.is_hidden);
+        if (hid) m.ability = hid.ability.name;
+        m.grotto = true;
+        if (!m.shiny && Math.random() < 0.05) { m.shiny = true; m.front = `${PKM_SPRITES}shiny/${m.dexId}.png`; }
+      }
+      return m;
+    };
+  }
+  /** A horde: you against five wild Pokémon of one species (built for the battle that's starting). */
+  async function pkmHordeSetup(b) {
+    const d = await pkmPokemonData(b.foe.name).catch(() => null);
+    if (!d) return false;
+    const team = [b.foe];
+    for (let i = 0; i < 4; i++) { const m = await pkmWildFrom(d, Math.max(2, b.foe.level - pkmRand(0, 3))); m.zone = b.foe.zone; team.push(m); }
+    b.team = team;
+    b.foeIdx = 0;
+    b.double = true;
+    b.horde = true;
+    b.mine = [b.me];
+    b.foes = team.slice();
+    b.foeNext = team.length;
+    b.dbl = { slot: 0, picks: [], stage: "move", pending: null, refill: [] };
+    pkmDblPrimary(b);
+    return true;
+  }
+
+  // ---------- Ultra Wormholes ----------
+  const PKM_WORMHOLES = [
+    { id: "blue", name: "Blue wormhole", icon: "🔵", desc: "Calm. Mostly Ultra Beasts.", legend: 0.15, lv: 0 },
+    { id: "green", name: "Green wormhole", icon: "🟢", desc: "Wild. Ultra Beasts and some legends.", legend: 0.35, lv: 3 },
+    { id: "red", name: "Red wormhole", icon: "🔴", desc: "Dangerous. Legends are likely, and they're strong.", legend: 0.6, lv: 6 },
+  ];
+  const PKM_UB = ["nihilego", "buzzwole", "pheromosa", "xurkitree", "celesteela", "kartana", "guzzlord", "poipole", "stakataka", "blacephalon"];
+  const PKM_WORM_LEGENDS = ["articuno", "zapdos", "moltres", "mewtwo", "raikou", "entei", "suicune", "lugia", "ho-oh", "regirock", "regice", "registeel", "latias", "latios", "kyogre", "groudon", "rayquaza", "uxie", "mesprit", "azelf", "dialga", "palkia",
+    "heatran", "regigigas", "giratina-altered", "cresselia", "cobalion", "terrakion", "virizion", "tornadus-incarnate", "thundurus-incarnate", "reshiram", "zekrom", "landorus-incarnate", "kyurem", "xerneas", "yveltal", "tapu-koko", "tapu-lele", "tapu-bulu", "tapu-fini", "solgaleo", "lunala", "necrozma"];
+  const pkmWormDay = () => { const s = pkmJSON("pkm_wormhole", {}); return s.day === pkmDay(0) ? s : { day: pkmDay(0), trips: 0 }; };
+  let pkmWormPanel = null;
+  function pkmCloseWormholes() { if (pkmWormPanel) pkmWormPanel.remove(); pkmWormPanel = null; }
+  function pkmWormTrip(id) {
+    const w = PKM_WORMHOLES.find((x) => x.id === id);
+    const s = pkmWormDay();
+    if (!w || s.trips >= 3) return pkmToast("The Ultra Wormholes are closed until tomorrow.");
+    if (!pkmRegionDone("alola") && GM_getValue("pkm_wormhole_force", "") !== "1") return pkmToast("Become the Alola Champion to ride the Ultra Wormholes.");
+    s.trips++;
+    pkmSave("pkm_wormhole", s);
+    const name = Math.random() < w.legend ? pkmPick(PKM_WORM_LEGENDS) : pkmPick(PKM_UB);
+    pkmForcedWild = { name, level: pkmClamp(pkmTopLevel() + w.lv + pkmRand(-2, 2), 30, MAX_LEVEL) };
+    pkmPostBattle = () => pkmOpenWormholes();
+    pkmCloseWormholes();
+    pkmToast(`🌀 You dove into the ${w.name}…`, 2500);
+    openBattle();
+    if (!battlePanel) { pkmForcedWild = null; pkmPostBattle = null; }
+  }
+  function pkmOpenWormholes() {
+    if (!pkmWormPanel) pkmWormPanel = pkmMakePanel("pkm-worm", "Ultra Wormholes", (e) => {
+      const a = e.target.closest("[data-a]")?.dataset.a;
+      if (a === "close") return pkmCloseWormholes();
+      const w = e.target.closest("[data-worm]");
+      if (w && !w.disabled) pkmWormTrip(w.dataset.worm);
+    });
+    const s = pkmWormDay();
+    const open = pkmRegionDone("alola") || GM_getValue("pkm_wormhole_force", "") === "1";
+    pkmWormPanel.innerHTML = `${pkmPanelHead("🌀 Ultra Wormholes", "uw-head")}<div class="lk-body">
+      <div class="pkm-dim">${open ? `Ride an Ultra Wormhole to meet Ultra Beasts and legendary Pokémon. ${3 - s.trips} of 3 trips left today.` : "Become the Alola Champion to ride the Ultra Wormholes."}</div>
+      <div class="uw-list">${PKM_WORMHOLES.map((w) => `<button type="button" class="uw-hole uw-${w.id}" data-worm="${w.id}" ${open && s.trips < 3 ? "" : "disabled"}><span class="uw-ico">${w.icon}</span><b>${w.name}</b><span class="pkm-dim">${w.desc}</span></button>`).join("")}</div></div>`;
+  }
+
+  // ---------- Villain teams (a short story in every region) ----------
+  const PKM_VILLAINS = [
+    { region: "kanto", team: "Team Rocket", color: "#b0202a", grunt: "rocketgrunt", gruntF: "rocketgruntf", admin: ["archer", "Archer"], boss: ["giovanni", "Giovanni"], pool: ["rattata", "zubat", "ekans", "koffing", "grimer", "meowth"], ace: ["persian", "nidoking", "rhydon"] },
+    { region: "johto", team: "Team Rocket", color: "#b0202a", grunt: "rocketgrunt", gruntF: "rocketgruntf", admin: ["ariana", "Ariana"], boss: ["archer", "Archer"], pool: ["raticate", "golbat", "koffing", "murkrow", "houndour"], ace: ["houndoom", "arbok", "weezing"] },
+    { region: "hoenn", team: "Team Magma", color: "#c2431b", grunt: "magmagrunt", gruntF: "magmagruntf", admin: ["courtney", "Courtney"], boss: ["maxie-gen6", "Maxie"], pool: ["poochyena", "numel", "zubat", "slugma", "baltoy"], ace: ["camerupt", "mightyena", "crobat"] },
+    { region: "sinnoh", team: "Team Galactic", color: "#3b6ea8", grunt: "galacticgrunt", gruntF: "galacticgruntf", admin: ["mars", "Mars"], boss: ["cyrus", "Cyrus"], pool: ["glameow", "stunky", "zubat", "croagunk", "bronzor"], ace: ["weavile", "honchkrow", "gyarados"] },
+    { region: "unova", team: "Team Plasma", color: "#4d5a73", grunt: "plasmagrunt", gruntF: "plasmagruntf", admin: ["zinzolin", "Zinzolin"], boss: ["ghetsis", "Ghetsis"], pool: ["patrat", "purrloin", "sandile", "trubbish", "scraggy"], ace: ["hydreigon", "seismitoad", "bisharp"] },
+    { region: "kalos", team: "Team Flare", color: "#d0402a", grunt: "flaregrunt", gruntF: "flaregruntf", admin: ["xerosic", "Xerosic"], boss: ["lysandre", "Lysandre"], pool: ["houndour", "litleo", "croagunk", "scraggy", "golbat"], ace: ["malamar", "gyarados", "honchkrow"] },
+    { region: "alola", team: "Team Skull", color: "#5b4b8a", grunt: "skullgrunt", gruntF: "skullgruntf", admin: ["plumeria", "Plumeria"], boss: ["guzma", "Guzma"], pool: ["zubat", "drowzee", "salandit", "rattata-alola", "yungoos"], ace: ["golisopod", "salazzle", "ariados"] },
+    { region: "galar", team: "Macro Cosmos", color: "#2f6a5a", grunt: "yellgrunt", gruntF: "yellgruntf", admin: ["oleana", "Oleana"], boss: ["rose", "Chairman Rose"], pool: ["nickit", "zigzagoon-galar", "skwovet", "rolycoly", "impidimp"], ace: ["copperajah", "garbodor", "froslass"] },
+  ];
+  const PKM_VILLAIN_STEPS = [
+    { need: 1, who: "grunt", title: "A grunt blocks the road", text: "\"Hand over your Pokémon, kid!\" A grunt is stealing Pokémon from travelers.", n: 2, lv: -3 },
+    { need: 3, who: "duo", title: "Two grunts at the hideout", text: "You followed the grunt to a hideout. Two of them attack together!", n: 4, lv: -1, double: true },
+    { need: 5, who: "admin", title: "The admin", text: "An admin is waiting deep inside. \"Our plan can't be stopped now.\"", n: 4, lv: 1 },
+    { need: 7, who: "boss", title: "The boss", text: "The boss steps out. \"So you're the one who keeps getting in our way.\"", n: 5, lv: 3 },
+  ];
+  const pkmVillainState = () => pkmJSON("pkm_villain", {});
+  function pkmVillainTrainer(v, i) {
+    const step = PKM_VILLAIN_STEPS[i];
+    const L = pkmClamp(pkmAreaLevel() + step.lv, 3, MAX_LEVEL);
+    const team = Array.from({ length: step.n }, (_, k) => [k === step.n - 1 && i >= 2 ? pkmPick(v.ace) : pkmPick(v.pool), k === step.n - 1 ? L + 1 : L - pkmRand(0, 2), k === step.n - 1 && i === 3 ? "sitrus-berry" : null]);
+    const who = step.who === "admin" ? v.admin : step.who === "boss" ? v.boss : [Math.random() < 0.5 ? v.grunt : v.gruntF, `${v.team} Grunt${step.who === "duo" ? "s" : ""}`];
+    return { title: step.who === "boss" ? `${v.team} Boss` : step.who === "admin" ? `${v.team} Admin` : v.team, name: who[1], sprite: `${PKM_TRAINER_IMG}${who[0]}.png`, lose: step.who === "boss" ? "This isn't the end…" : "We'll remember this!", team, gym: 0, double: !!step.double, villain: { region: v.region, step: i } };
+  }
+  let pkmVillainPanel = null;
+  function pkmCloseVillains() { if (pkmVillainPanel) pkmVillainPanel.remove(); pkmVillainPanel = null; }
+  function pkmVillainFight(region) {
+    const v = PKM_VILLAINS.find((x) => x.region === region);
+    const s = pkmVillainState();
+    const i = s[region] || 0;
+    if (!v || i >= PKM_VILLAIN_STEPS.length) return;
+    pkmPostBattle = () => {
+      if (pkmLastResult === "Won") {
+        const st = pkmVillainState();
+        st[region] = Math.max(st[region] || 0, i + 1);
+        pkmSave("pkm_villain", st);
+        const coins = [600, 1200, 2500, 6000][i];
+        const items = i === 3 ? [[STORAGE.masterBalls, 1, "Master Ball"], ["pkm_item_ability-patch", 1, "Ability Patch"]] : i === 2 ? [[STORAGE.ultraBalls, 3, "Ultra Balls"]] : [[STORAGE.greatBalls, 3, "Great Balls"]];
+        setInt(STORAGE.coins, getInt(STORAGE.coins) + coins);
+        pkmGive(items);
+        pkmTrack("villainWins");
+        setTimeout(() => pkmToast(i === 3 ? `🏆 You stopped ${v.team} in ${pkmRegion(region).name}! +${coins} coins, ${pkmItemsText(items)}.` : `You beat ${v.team}! +${coins} coins, ${pkmItemsText(items)}.`, 5000), 300);
+      }
+      pkmOpenVillains(region);
+    };
+    pkmCloseVillains();
+    pkmStartTrainer(pkmVillainTrainer(v, i));
+    if (!battlePanel) pkmPostBattle = null;
+  }
+  let pkmVillainRegion = "kanto";
+  function pkmOpenVillains(region) {
+    if (typeof region === "string") pkmVillainRegion = region;
+    if (!pkmVillainPanel) pkmVillainPanel = pkmMakePanel("pkm-villain", "Villain teams", (e) => {
+      const a = e.target.closest("[data-a]")?.dataset.a;
+      if (a === "close") return pkmCloseVillains();
+      const r = e.target.closest("[data-vreg]");
+      if (r && !r.disabled) return pkmOpenVillains(r.dataset.vreg);
+      const f = e.target.closest("[data-vfight]");
+      if (f && !f.disabled) pkmVillainFight(f.dataset.vfight);
+    });
+    const s = pkmVillainState();
+    const v = PKM_VILLAINS.find((x) => x.region === pkmVillainRegion) || PKM_VILLAINS[0];
+    const reg = pkmRegion(v.region);
+    const have = pkmRegionBadges(reg, pkmBadges()).length;
+    const i = s[v.region] || 0;
+    const step = PKM_VILLAIN_STEPS[i];
+    pkmVillainPanel.innerHTML = `${pkmPanelHead("🦹 Villain teams", "vl-head")}<div class="lk-body">
+      <div class="bag-tabs" role="tablist">${PKM_VILLAINS.map((x, ri) => `<button type="button" role="tab" data-vreg="${x.region}" aria-selected="${x.region === v.region}" ${pkmRegionOpen(ri) ? "" : "disabled"}>${pkmRegion(x.region).icon} ${pkmEsc(pkmRegion(x.region).name)}${(s[x.region] || 0) >= 4 ? " ✅" : ""}</button>`).join("")}</div>
+      <div class="vl-team" style="--vc:${v.color}"><b>${pkmEsc(v.team)}</b><span class="pkm-dim">${i}/${PKM_VILLAIN_STEPS.length} chapters</span></div>
+      <div class="vl-steps">${PKM_VILLAIN_STEPS.map((x, k) => `<div class="vl-step${k < i ? " done" : k === i ? " now" : ""}"><b>${k < i ? "✅" : k === i ? "▶" : "🔒"} ${pkmEsc(x.title)}</b><span class="pkm-dim">${k <= i ? pkmEsc(x.text) : `Needs ${x.need} ${pkmEsc(reg.name)} badge${x.need > 1 ? "s" : ""}`}</span></div>`).join("")}</div>
+      ${step ? `<div class="pkm-btns"><button type="button" class="pkm-btn2 primary" data-vfight="${v.region}" ${have >= step.need ? "" : "disabled"}>${have >= step.need ? `⚔️ ${step.double ? "Fight them" : "Battle"}` : `Earn ${step.need} badge${step.need > 1 ? "s" : ""} in ${pkmEsc(reg.name)} (you have ${have})`}</button></div>` : `<div class="pkm-dim">🏆 You stopped ${pkmEsc(v.team)} for good. The region is safe.</div>`}</div>`;
+  }
+
+  // ---------- Trainer card: Species progress tab ----------
+  {
+    const ob = pkmOpenBadges;
+    pkmOpenBadges = function () {
+      const r = ob.apply(this, arguments);
+      const P = pkmBadgesPanel;
+      if (!P) return r;
+      const tabs = P.querySelector(".bag-tabs");
+      if (tabs && !tabs.querySelector('[data-tab="species"]')) tabs.insertAdjacentHTML("beforeend", `<button type="button" role="tab" data-tab="species" aria-selected="${pkmBadgesTab === "species"}">Species</button>`);
+      if (pkmBadgesTab !== "species") return r;
+      tabs && tabs.querySelectorAll("[data-tab]").forEach((t) => t.setAttribute("aria-selected", String(t.dataset.tab === "species")));
+      const dexArr = getArr(STORAGE.pokedex) || [];
+      const rec = pkmJSON("pkm_species_caught", {});
+      const shin = pkmJSON("pkm_species_shiny", {});
+      const party = Object.values(getObj(STORAGE.party) || {});
+      const rows = dexArr.map((p) => {
+        const n = String(p.name).toLowerCase();
+        const own = party.filter((x) => String(x.name).toLowerCase() === n);
+        const caught = Math.max(rec[n] || 0, own.length);
+        const shiny = Math.max(shin[n] || 0, own.filter((x) => x.isShiny).length);
+        const next = [10, 25, 50, 100].find((k) => caught < k);
+        return { n, p, caught, shiny, mult: pkmShinyBonus(n), next };
+      }).sort((a, b) => (pkmDexId(a.n) || 9999) - (pkmDexId(b.n) || 9999));
+      const totShiny = rows.reduce((s, x) => s + (x.shiny ? 1 : 0), 0);
+      const body = P.querySelector(".bc-body");
+      if (body) body.innerHTML = `<div class="sp-sum"><div class="bc-tile"><div class="bc-tv">${rows.length}</div><div class="pkm-dim">Species caught</div></div><div class="bc-tile"><div class="bc-tv">${totShiny}</div><div class="pkm-dim">Species found shiny</div></div><div class="bc-tile"><div class="bc-tv">${rows.filter((x) => x.mult >= 4).length}</div><div class="pkm-dim">At max shiny odds</div></div></div>
+        ${rows.length ? `<div class="sp-list">${rows.map((x) => `<div class="sp-row"><img src="${pkmEsc(pkmMonSprite(x.p, dexArr))}" alt="" loading="lazy"><div class="sp-main"><b>#${pkmDexId(x.n) || "?"} ${pkmEsc(pkmCap(x.n))}</b>${x.shiny ? ` <span title="Shinies caught">✨${x.shiny}</span>` : ""}
+          <div class="pkm-dim">Caught ${x.caught} · shiny odds x${x.mult}${x.next ? ` · ${x.next - x.caught} more for the next boost` : " · max"}</div><div class="bc-bar"><span style="width:${Math.min(100, Math.round((x.caught / 100) * 100))}%"></span></div></div></div>`).join("")}</div>` : `<div class="pkm-dim" style="text-align:center;padding:30px">Catch Pokémon to fill this page.</div>`}`;
+      return r;
+    };
+    const sc = pkmStoreCaught;
+    pkmStoreCaught = function (f, source) {
+      const id = sc.apply(this, arguments);
+      try { if (f && f.shiny && source !== "test") { const n = String(f.name).toLowerCase(); const s = pkmJSON("pkm_species_shiny", {}); s[n] = (s[n] || 0) + 1; pkmSave("pkm_species_shiny", s); } } catch {}
+      return id;
+    };
+  }
+
+  // ---------- Battle look: day/night tint, horde layout, move animations ----------
+  const pkmTimeOfDay = () => {
+    const f = GM_getValue("pkm_time_force", "");
+    if (f === "night" || f === "day" || f === "dawn" || f === "dusk") return f;
+    const h = new Date().getHours();
+    return h >= 5 && h < 8 ? "dawn" : h >= 17 && h < 20 ? "dusk" : h >= 20 || h < 5 ? "night" : "day";
+  };
+  {
+    const db = drawBattle;
+    drawBattle = function () {
+      const r = db.apply(this, arguments);
+      const b = pkb;
+      if (!b || !battlePanel) return r;
+      const field = battlePanel.querySelector(".pkb-field");
+      if (field) {
+        field.classList.add(`tod-${pkmTimeOfDay()}`);
+        if (b.horde) { field.querySelector(".pkb-row.foe")?.classList.add("horde"); field.querySelector(".pkb-row.me")?.classList.add("solo"); }
+      }
+      if (b.horde && b.trainer == null) { const gym = battlePanel.querySelector(".pkb-msg"); if (gym && !battlePanel.querySelector(".pkb-horde-tag")) gym.insertAdjacentHTML("beforebegin", `<div class="pkb-horde-tag">🐾 Horde encounter: 5 wild ${pkmEsc(b.foes[0] ? b.foes[0].display : "")}</div>`); }
+      return r;
+    };
+  }
+  const PKM_FX = { normal: "💥", fire: "🔥", water: "💧", grass: "🍃", electric: "⚡", ice: "❄️", fighting: "👊", poison: "☠️", ground: "🪨", flying: "🌪️", psychic: "🌀", bug: "🐛", rock: "🪨", ghost: "👻", dragon: "🐉", dark: "🌑", steel: "⚙️", fairy: "✨" };
+  const pkmFxOn = () => GM_getValue("pkm_skip_anim", "false") !== "true" && GM_getValue("pkm_move_fx", "true") !== "false" && !(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+  function pkmMoveFx(b, def, mv) {
+    if (!battlePanel || !pkmFxOn() || !mv || mv.cls === "status") return;
+    const side = pkmMine(b, def) ? "me" : "foe";
+    let el = null;
+    if (b.double) { const list = side === "me" ? b.mine : b.foes; const i = list.indexOf(def); el = battlePanel.querySelectorAll(`.pkb-row.${side} .dbl-mon`)[i]; }
+    else el = battlePanel.querySelector(`.pkb-row.${side} img`);
+    if (!el) return;
+    const rc = el.getBoundingClientRect();
+    if (!rc.width) return;
+    const fx = document.createElement("div");
+    fx.className = `pkm-fx fx-${mv.type}`;
+    fx.style.left = `${rc.left + rc.width / 2}px`;
+    fx.style.top = `${rc.top + rc.height / 2}px`;
+    fx.setAttribute("aria-hidden", "true");
+    const ico = PKM_FX[mv.type] || "💥";
+    fx.innerHTML = `<span class="fx-ring"></span>${Array.from({ length: 6 }, (_, i) => `<span class="fx-p" style="--a:${i * 60 + pkmRand(-15, 15)}deg;--d:${pkmRand(28, 46)}px">${ico}</span>`).join("")}`;
+    pkmMount(fx);
+    setTimeout(() => fx.remove(), 700 * 20 > 5000 ? 700 : 700);
+  }
+  {
+    const um = pkmUseMove;
+    pkmUseMove = async function (b, att, def, mv) {
+      try { if (b && att && def && att.hp > 0 && !att.charging && !(mv && mv.quiet && mv.spread)) pkmMoveFx(b, def, mv); } catch {}
+      return um.apply(this, arguments);
+    };
+  }
+
+  // ---------- Gym puzzles (once per Gym, before the first challenge) ----------
+  let pkmPuzzlePanel = null;
+  let pkmPuzzle = null;
+  function pkmClosePuzzle() { if (pkmPuzzlePanel) pkmPuzzlePanel.remove(); pkmPuzzlePanel = null; pkmPuzzle = null; }
+  const pkmPuzzlesDone = () => pkmJSON("pkm_gym_puzzles", []);
+  /** Runs `go` right away, or after the Gym's puzzle is solved. */
+  function pkmGymGate(gym, go) {
+    if (pkmBadges().includes(gym.n) || pkmPuzzlesDone().includes(gym.n) || GM_getValue("pkm_gym_puzzles_off", "false") === "true") return go();
+    pkmCloseTrainers();
+    pkmOpenPuzzle(gym, go);
+  }
+  const PKM_TYPES_ALL = Object.keys(PKM_TYPE_CHART);
+  const pkmEffOn = (atk, def) => { const e = PKM_TYPE_CHART[atk] || {}; return e[def] == null ? 1 : e[def]; };
+  function pkmQuizQ(type) {
+    const good = PKM_TYPES_ALL.filter((t) => pkmEffOn(t, type) >= 2);
+    const bad = PKM_TYPES_ALL.filter((t) => pkmEffOn(t, type) <= 1);
+    if (!good.length || bad.length < 2) return null;
+    const ans = pkmPick(good);
+    const opts = [ans, ...bad.sort(() => Math.random() - 0.5).slice(0, 2)].sort(() => Math.random() - 0.5);
+    return { q: `Which type of move is super effective against ${pkmCap(type)} Pokémon?`, opts, ans };
+  }
+  function pkmLightsNew() {
+    const g = Array(9).fill(true);
+    const press = (i) => { const r = Math.floor(i / 3), c = i % 3; for (const [dr, dc] of [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1]]) { const rr = r + dr, cc = c + dc; if (rr >= 0 && rr < 3 && cc >= 0 && cc < 3) g[rr * 3 + cc] = !g[rr * 3 + cc]; } };
+    for (let k = 0; k < 3; k++) press(pkmRand(0, 8));
+    if (g.every(Boolean)) press(4);
+    return { g, press };
+  }
+  function pkmOpenPuzzle(gym, go) {
+    pkmClosePuzzle();
+    const kind = gym.n % 2 ? "quiz" : "lights";
+    pkmPuzzle = { gym, go, kind, step: 0, need: 3, q: null, lights: null, moves: 0 };
+    if (kind === "quiz") pkmPuzzle.q = pkmQuizQ(gym.type) || pkmQuizQ("normal");
+    else pkmPuzzle.lights = pkmLightsNew();
+    pkmPuzzlePanel = pkmMakePanel("pkm-puzzle", "Gym puzzle", (e) => {
+      const p = pkmPuzzle;
+      if (!p) return;
+      const a = e.target.closest("[data-a]")?.dataset.a;
+      if (a === "close") return pkmClosePuzzle();
+      const opt = e.target.closest("[data-opt]");
+      if (opt && p.kind === "quiz") {
+        if (opt.dataset.opt === p.q.ans) { p.step++; playSound("hit"); if (p.step >= p.need) return pkmPuzzleSolved(); p.q = pkmQuizQ(pkmPick([gym.type, gym.type, pkmPick(PKM_TYPES_ALL)])) || p.q; }
+        else { pkmToast(`Not quite. ${pkmCap(p.q.ans)} is super effective here. Try another one.`, 3000); p.step = Math.max(0, p.step - 1); p.q = pkmQuizQ(gym.type) || p.q; }
+        return pkmDrawPuzzle();
+      }
+      const tile = e.target.closest("[data-tile]");
+      if (tile && p.kind === "lights") {
+        p.lights.press(+tile.dataset.tile); p.moves++;
+        if (p.lights.g.every(Boolean)) return pkmPuzzleSolved();
+        return pkmDrawPuzzle();
+      }
+      if (a === "reset" && p.kind === "lights") { p.lights = pkmLightsNew(); p.moves = 0; return pkmDrawPuzzle(); }
+    });
+    pkmDrawPuzzle();
+  }
+  function pkmPuzzleSolved() {
+    const p = pkmPuzzle;
+    const done = pkmPuzzlesDone();
+    if (!done.includes(p.gym.n)) done.push(p.gym.n);
+    pkmSave("pkm_gym_puzzles", done);
+    pkmClosePuzzle();
+    pkmToast(`🧩 Puzzle solved! ${p.gym.leader} is waiting for you.`, 3000);
+    p.go();
+  }
+  function pkmDrawPuzzle() {
+    const p = pkmPuzzle;
+    if (!p || !pkmPuzzlePanel) return;
+    const g = p.gym;
+    const body = p.kind === "quiz"
+      ? `<div class="pkm-dim">The Gym trainers quiz you before you can reach ${pkmEsc(g.leader)}. Answer ${p.need} in a row.</div>
+        <div class="pz-prog">${"🟢".repeat(p.step)}${"⚪".repeat(p.need - p.step)}</div>
+        <div class="pz-q">${pkmEsc(p.q.q)}</div>
+        <div class="pkm-btns" style="justify-content:center">${p.q.opts.map((o) => `<button type="button" class="pkm-btn2 pz-opt" data-opt="${o}"><span class="pk-type ${o}">${o}</span></button>`).join("")}</div>`
+      : `<div class="pkm-dim">The path to ${pkmEsc(g.leader)} is dark. Each switch flips itself and the ones next to it. Light up all nine to open the way.</div>
+        <div class="pz-grid">${p.lights.g.map((on, i) => `<button type="button" class="pz-tile${on ? " on" : ""}" data-tile="${i}" aria-label="Switch ${i + 1} ${on ? "on" : "off"}" aria-pressed="${on}"></button>`).join("")}</div>
+        <div class="pkm-btns" style="justify-content:center"><span class="pkm-dim">Moves: ${p.moves}</span><button type="button" class="pkm-btn2" data-a="reset">Start over</button></div>`;
+    pkmPuzzlePanel.innerHTML = `${pkmPanelHead(`🧩 ${pkmEsc(g.leader)}'s Gym`, "pz-head")}<div class="lk-body">${body}</div>`;
+  }
+
+  // ---------- Trainer look ----------
+  const PKM_LOOKS = ["red", "leaf-gen3", "ethan", "lyra", "kris", "brendan", "may", "lucas", "dawn", "hilbert", "hilda", "nate", "rosa", "calem", "serena", "elio", "selene", "victor", "gloria", "blue", "marnie", "acetrainer", "acetrainerf", "youngster", "lass", "hiker", "swimmer", "mable", "bryony", "piers"];
+  const PKM_LOOK_COLORS = [["Blue", "#1f6fe0", "#7a2fb5"], ["Red", "#d6322a", "#7a1414"], ["Green", "#2f9e5a", "#14522e"], ["Gold", "#d6a12a", "#7a5414"], ["Pink", "#e05aa0", "#7a2f6a"], ["Night", "#2a2f5a", "#0e1128"]];
+  const pkmLook = () => Object.assign({ sprite: "red", color: 0, title: "" }, pkmJSON("pkm_trainer_look", {}));
+  let pkmLookPanel = null;
+  function pkmCloseLook() { if (pkmLookPanel) pkmLookPanel.remove(); pkmLookPanel = null; }
+  function pkmOpenLook() {
+    if (!pkmLookPanel) pkmLookPanel = pkmMakePanel("pkm-look", "Trainer look", (e) => {
+      const a = e.target.closest("[data-a]")?.dataset.a;
+      if (a === "close") return pkmCloseLook();
+      const L = pkmLook();
+      const spr = e.target.closest("[data-spr]");
+      const col = e.target.closest("[data-col]");
+      if (spr) { L.sprite = spr.dataset.spr; pkmSave("pkm_trainer_look", L); return pkmOpenLook(); }
+      if (col) { L.color = +col.dataset.col; pkmSave("pkm_trainer_look", L); return pkmOpenLook(); }
+      if (a === "save") {
+        const P = pkmLookPanel;
+        const name = pkmSafeName(P.querySelector(".lk-name").value, 16);
+        if (name) GM_setValue("pkm_trainer_name", name);
+        L.title = pkmSafeName(P.querySelector(".lk-title").value, 24) || "";
+        pkmSave("pkm_trainer_look", L);
+        if (pkmOnline() && name) pkmApi("rename", { name }).then((r) => { const o = pkmOnline(); if (o) { o.name = r.name; pkmSave("pkm_online", o); } }).catch(() => {});
+        pkmToast("Trainer look saved.");
+        return pkmOpenLook();
+      }
+    });
+    const L = pkmLook();
+    const c = PKM_LOOK_COLORS[L.color] || PKM_LOOK_COLORS[0];
+    pkmLookPanel.innerHTML = `${pkmPanelHead("🧢 Trainer look", "tl-head")}<div class="lk-body">
+      <div class="tl-preview" style="background:linear-gradient(120deg,${c[1]},${c[2]})"><img src="${PKM_TRAINER_IMG}${pkmEsc(L.sprite)}.png" alt=""><div><b>${pkmEsc(pkmTrainerName())}</b><div>${pkmEsc(L.title || pkmRank().name)}</div></div></div>
+      <div class="pkm-btns"><label class="lk-l">Name <input class="lk-name" maxlength="16" value="${pkmEsc(pkmTrainerName())}"></label><label class="lk-l">Title <input class="lk-title" maxlength="24" placeholder="${pkmEsc(pkmRank().name)}" value="${pkmEsc(L.title)}"></label><button type="button" class="pkm-btn2 primary" data-a="save">Save</button></div>
+      <div class="bag-sec"><span>Card color</span></div>
+      <div class="pkm-btns">${PKM_LOOK_COLORS.map((x, i) => `<button type="button" class="tl-col${i === L.color ? " on" : ""}" data-col="${i}" style="background:linear-gradient(120deg,${x[1]},${x[2]})" aria-label="${x[0]}" aria-pressed="${i === L.color}"></button>`).join("")}</div>
+      <div class="bag-sec"><span>Outfit</span></div>
+      <div class="tl-grid">${PKM_LOOKS.map((s) => `<button type="button" class="tl-spr${s === L.sprite ? " on" : ""}" data-spr="${s}" aria-pressed="${s === L.sprite}" title="${pkmEsc(pkmCap(s.replace(/-gen\d$/, "")))}"><img src="${PKM_TRAINER_IMG}${s}.png" alt="${pkmEsc(s)}" loading="lazy"></button>`).join("")}</div></div>`;
+  }
+  // The trainer card header shows your look
+  {
+    const ob = pkmOpenBadges;
+    pkmOpenBadges = function () {
+      const r = ob.apply(this, arguments);
+      const P = pkmBadgesPanel;
+      const head = P && P.querySelector(".bc-head");
+      if (head && !head.querySelector(".bc-me")) {
+        const L = pkmLook();
+        const c = PKM_LOOK_COLORS[L.color] || PKM_LOOK_COLORS[0];
+        head.style.background = `linear-gradient(90deg,${c[1]},${c[2]})`;
+        head.querySelector("span").insertAdjacentHTML("afterbegin", `<img class="bc-me" src="${PKM_TRAINER_IMG}${pkmEsc(L.sprite)}.png" alt=""><button type="button" class="pkm-btn2 bc-look" data-look="1" title="Change your trainer look">🧢 ${pkmEsc(pkmTrainerName())}${L.title ? ` · ${pkmEsc(L.title)}` : ""}</button> `);
+        head.querySelector("[data-look]").onclick = (e) => { e.stopPropagation(); pkmOpenLook(); };
+      }
+      return r;
+    };
+  }
+
+  // ---------- Options: server address, move animations, gym puzzles ----------
+  {
+    const dro = pkmDrawOptions;
+    pkmDrawOptions = function () {
+      const r = dro.apply(this, arguments);
+      const P = pkmOptionsPanel;
+      if (!P || pkmOptionsTab !== "game" || P.querySelector("[data-o42]")) return r;
+      const fx = GM_getValue("pkm_move_fx", "true") !== "false";
+      const pz = GM_getValue("pkm_gym_puzzles_off", "false") !== "true";
+      P.querySelector(".lk-body").insertAdjacentHTML("beforeend", `<div class="bag-sec" data-o42="1"><span>More options</span></div>
+        <div class="pkm-btns"><button type="button" class="pkm-btn2 ${fx ? "primary" : ""}" data-o42="fx">${fx ? "✓ " : ""}Move animations</button><button type="button" class="pkm-btn2 ${pz ? "primary" : ""}" data-o42="pz">${pz ? "✓ " : ""}Gym puzzles</button></div>
+        <div class="bag-sec"><span>Game server</span><span class="pkm-dim">for 🌐 Online</span></div>
+        <div class="pkm-btns"><input class="op-srv" style="flex:1" placeholder="${PKM_SERVER_DEFAULT}" value="${pkmEsc(GM_getValue("pkm_server_url", ""))}" aria-label="Game server address"><button type="button" class="pkm-btn2" data-o42="srv">Save</button></div>`);
+      P.querySelectorAll("[data-o42]").forEach((el) => {
+        if (el.tagName !== "BUTTON") return;
+        el.onclick = (e) => {
+          e.stopPropagation();
+          const k = el.dataset.o42;
+          if (k === "fx") GM_setValue("pkm_move_fx", fx ? "false" : "true");
+          if (k === "pz") GM_setValue("pkm_gym_puzzles_off", pz ? "true" : "false");
+          if (k === "srv") { const v = P.querySelector(".op-srv").value.trim(); if (v && !/^https:\/\//.test(v)) return pkmToast("The server address must start with https://"); GM_setValue("pkm_server_url", v); pkmToast(v ? "Server address saved." : "Using the default server."); }
+          pkmDrawOptions();
+        };
+      });
+      return r;
+    };
+  }
+
+  // ---------- Panels ----------
+  PKM_PANELS.push(
+    ["online", () => pkmOnlinePanel, () => pkmCloseOnline()], ["camp", () => pkmCampPanel, () => pkmCloseCamp()], ["worm", () => pkmWormPanel, () => pkmCloseWormholes()],
+    ["villain", () => pkmVillainPanel, () => pkmCloseVillains()], ["puzzle", () => pkmPuzzlePanel, () => pkmClosePuzzle()], ["look", () => pkmLookPanel, () => pkmCloseLook()],
+  );
+  pkmOpenOnline = pkmExclusive("online", pkmOpenOnline);
+  pkmOpenCamp = pkmExclusive("camp", pkmOpenCamp);
+  pkmOpenWormholes = pkmExclusive("worm", pkmOpenWormholes);
+  pkmOpenVillains = pkmExclusive("villain", pkmOpenVillains);
+  pkmOpenLook = pkmExclusive("look", pkmOpenLook);
+
+  pkmStyle(`
+    .pkm-set.pkm-online,.pkm-set.pkm-camp,.pkm-set.pkm-worm,.pkm-set.pkm-villain,.pkm-set.pkm-puzzle,.pkm-set.pkm-look{width:min(680px,96vw);max-height:92vh;overflow:auto}
+    .pkm-online.busy{cursor:progress}.pkm-online.busy .lk-body{opacity:.6;pointer-events:none}
+    .ol-head{background:linear-gradient(90deg,#1f8fe0,#145a9a)!important}.cp-head{background:linear-gradient(90deg,#5aa04a,#2e6a24)!important}
+    .uw-head{background:linear-gradient(90deg,#7a3ab5,#2a1460)!important}.vl-head{background:linear-gradient(90deg,#8a2a2a,#3a1010)!important}
+    .pz-head{background:linear-gradient(90deg,#c08a2a,#6a4a10)!important}.tl-head{background:linear-gradient(90deg,#2a8ab0,#14506a)!important}
+    .ol-card{display:flex;gap:10px;align-items:center;padding:6px 0;border-bottom:1px solid rgba(127,127,127,.15)}.ol-card img{width:64px;height:64px;image-rendering:pixelated;flex:none}
+    .ol-main{flex:1;display:grid;gap:4px}.ol-done{color:#2fbf71;font-weight:600}.ol-err{color:#ff6b6b}
+    .ol-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:6px}.ol-tile{display:flex;flex-direction:column;align-items:center;gap:3px;padding:6px;border-radius:10px;background:rgba(127,127,127,.12);font-size:12px;text-align:center}
+    .ol-tile img{width:64px;height:64px;image-rendering:pixelated}
+    .cp-party{display:flex;gap:6px;flex-wrap:wrap;justify-content:center;margin:8px 0}.cp-pick{all:unset;cursor:pointer;display:flex;flex-direction:column;align-items:center;padding:4px 6px;border-radius:10px;font-size:11.5px;background:rgba(127,127,127,.12)}
+    .cp-pick.on{outline:2px solid #5aa04a}.cp-pick img{width:48px;height:48px;image-rendering:pixelated}
+    .cp-stage{position:relative;display:grid;place-items:center;height:150px;border-radius:14px;background:radial-gradient(ellipse at 50% 85%,rgba(90,160,74,.45),transparent 60%),linear-gradient(#bfe6ff,#e9f7d8)}
+    .cp-big{width:128px;height:128px;image-rendering:pixelated}.cp-f{text-align:center;margin:6px 0}
+    .cp-heart{position:absolute;top:20px;left:50%;transform:translateX(-50%);font-size:26px;animation:cpHeart .9s ease-out forwards;pointer-events:none}
+    .cp-wiggle{animation:cpWiggle .5s}.cp-hop{animation:cpHop .5s}.cp-spin{animation:cpSpin .6s}
+    @keyframes cpHeart{to{transform:translate(-50%,-40px);opacity:0}}@keyframes cpWiggle{25%{transform:rotate(-8deg)}75%{transform:rotate(8deg)}}
+    @keyframes cpHop{50%{transform:translateY(-18px)}}@keyframes cpSpin{to{transform:rotate(360deg)}}
+    .uw-list{display:grid;gap:8px;margin-top:8px}.uw-hole{all:unset;cursor:pointer;display:grid;grid-template-columns:40px 1fr;grid-template-rows:auto auto;column-gap:10px;padding:10px;border-radius:14px;color:#fff}
+    .uw-hole[disabled]{opacity:.45;cursor:not-allowed}.uw-ico{grid-row:span 2;font-size:30px;align-self:center}
+    .uw-blue{background:linear-gradient(120deg,#1a4a9a,#4ab0ff)}.uw-green{background:linear-gradient(120deg,#145a2a,#4ad08a)}.uw-red{background:linear-gradient(120deg,#6a1010,#ff5a3a)}
+    .vl-team{display:flex;justify-content:space-between;align-items:center;padding:8px 10px;margin:8px 0;border-radius:10px;border-left:6px solid var(--vc);background:rgba(127,127,127,.12)}
+    .vl-steps{display:grid;gap:6px}.vl-step{display:grid;gap:2px;padding:6px 8px;border-radius:8px;background:rgba(127,127,127,.08)}.vl-step.now{outline:2px solid #ffcb05}.vl-step.done{opacity:.7}
+    .sp-sum{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:8px}.sp-list{display:grid;gap:4px}.sp-row{display:flex;gap:8px;align-items:center}.sp-row img{width:44px;height:44px;image-rendering:pixelated}.sp-main{flex:1}
+    .pkb-field.tod-dawn::after,.pkb-field.tod-dusk::after,.pkb-field.tod-night::after{content:"";position:absolute;inset:0;pointer-events:none;border-radius:inherit}
+    .pkb-field.tod-dawn::after{background:linear-gradient(180deg,rgba(255,170,120,.28),rgba(255,220,180,.08))}
+    .pkb-field.tod-dusk::after{background:linear-gradient(180deg,rgba(255,110,60,.32),rgba(120,60,140,.18))}
+    .pkb-field.tod-night::after{background:linear-gradient(180deg,rgba(10,20,70,.38),rgba(10,20,60,.22))}
+    .dbl-row.horde{grid-template-columns:repeat(5,1fr)}.dbl-row.horde .dbl-spr{width:52px;height:52px}.dbl-row.horde .dbl-info{font-size:10px;padding:2px 4px}
+    .dbl-row.solo{grid-template-columns:minmax(0,260px);justify-content:center}
+    .pkb-horde-tag{text-align:center;font-size:12px;font-weight:700;opacity:.8;margin:2px 0}
+    .pkm-fx{position:fixed;z-index:10020;width:0;height:0;pointer-events:none}
+    .pkm-fx .fx-p{position:absolute;left:-12px;top:-12px;font-size:22px;animation:fxBurst .6s ease-out forwards}
+    .pkm-fx .fx-ring{position:absolute;left:-30px;top:-30px;width:60px;height:60px;border-radius:50%;border:4px solid var(--fxc,#fff);animation:fxRing .5s ease-out forwards}
+    @keyframes fxBurst{from{transform:rotate(var(--a)) translateX(0) rotate(calc(-1*var(--a))) scale(.6);opacity:1}to{transform:rotate(var(--a)) translateX(var(--d)) rotate(calc(-1*var(--a))) scale(1.1);opacity:0}}
+    @keyframes fxRing{from{transform:scale(.3);opacity:.9}to{transform:scale(1.4);opacity:0}}
+    .fx-fire{--fxc:#ff6a2a}.fx-water{--fxc:#3a9aff}.fx-grass{--fxc:#4ac04a}.fx-electric{--fxc:#ffd21a}.fx-ice{--fxc:#9ae6ff}.fx-fighting{--fxc:#c0402a}.fx-poison{--fxc:#a04ac0}.fx-ground{--fxc:#c0a050}.fx-flying{--fxc:#a0b4ff}
+    .fx-psychic{--fxc:#ff5a9a}.fx-bug{--fxc:#a0c020}.fx-rock{--fxc:#b0a060}.fx-ghost{--fxc:#6a5aa0}.fx-dragon{--fxc:#6a3aff}.fx-dark{--fxc:#5a4a40}.fx-steel{--fxc:#b0b0c8}.fx-fairy{--fxc:#ff9ad0}.fx-normal{--fxc:#e0e0d0}
+    .pz-prog{text-align:center;font-size:20px;margin:6px 0}.pz-q{text-align:center;font-weight:700;margin:8px 0}
+    .pz-grid{display:grid;grid-template-columns:repeat(3,64px);gap:8px;justify-content:center;margin:12px 0}
+    .pz-tile{all:unset;cursor:pointer;width:64px;height:64px;border-radius:12px;background:#2a2f45;box-shadow:inset 0 0 0 2px rgba(255,255,255,.15)}
+    .pz-tile.on{background:radial-gradient(circle,#fff6a0,#ffcb05);box-shadow:0 0 14px #ffcb05}
+    .tl-preview{display:flex;gap:12px;align-items:center;padding:10px;border-radius:14px;color:#fff;margin-bottom:8px}.tl-preview img{width:80px;height:80px;image-rendering:pixelated}
+    .tl-col{all:unset;cursor:pointer;width:34px;height:34px;border-radius:50%;box-shadow:inset 0 0 0 2px rgba(255,255,255,.4)}.tl-col.on{outline:3px solid #ffcb05}
+    .tl-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(70px,1fr));gap:6px}.tl-spr{all:unset;cursor:pointer;border-radius:10px;background:rgba(127,127,127,.12);display:grid;place-items:center;padding:4px}
+    .tl-spr.on{outline:2px solid #2a8ab0}.tl-spr img{width:60px;height:60px;image-rendering:pixelated}
+    .bc-me{width:34px;height:34px;image-rendering:pixelated;vertical-align:middle;margin-right:4px}.bc-look{font-size:12px!important;padding:3px 8px!important}
+  `, "pkm-v42");
+  // =====================================================================
+  //  4.3: live friend battles, leaderboards, server events (weekly gift,
+  //  shared raid, Safari outbreak), friends and gifts, shared replays,
+  //  online contests, profile badges, habitat map, map weather events and
+  //  a partner that shows its mood
+  // =====================================================================
+
+  // ---------- Profile badges (shown next to your name online) ----------
+  const PKM_BADGE_ICONS = { champ: ["🏆", "Champion"], champ8: ["👑", "Champion of every region"], allbadges: ["🎖️", "All 64 Gym badges"], dex100: ["📕", "100 Pokédex entries"], dex500: ["📚", "500 Pokédex entries"],
+    shiny: ["✨", "Shiny hunter"], tower50: ["🗼", "50-win Battle Tower streak"], villain: ["🦹", "Stopped a villain team"], nuzlocke: ["🪦", "Nuzlocke trainer"], master: ["🎀", "Master Contest winner"] };
+  function pkmMyBadges() {
+    const out = [];
+    const champs = Object.keys(pkmJSON("pkm_champs", {}) || {}).length;
+    const dex = (getArr(STORAGE.pokedex) || []).length;
+    const party = Object.values(getObj(STORAGE.party) || {});
+    const st = getObj(STORAGE.stats) || {};
+    if (champs >= PKM_REGIONS.length) out.push("champ8"); else if (champs) out.push("champ");
+    if (pkmBadges().length >= PKM_GYMS.length) out.push("allbadges");
+    if (dex >= 500) out.push("dex500"); else if (dex >= 100) out.push("dex100");
+    if (party.some((p) => p.isShiny) || Object.keys(pkmJSON("pkm_species_shiny", {})).length) out.push("shiny");
+    if ((pkmTower().best || 0) >= 50) out.push("tower50");
+    if (Object.values(pkmJSON("pkm_villain", {})).some((n) => n >= 4)) out.push("villain");
+    if (pkmNuzOn() && pkmBadges().length >= 8) out.push("nuzlocke");
+    if (Object.values(st).some((s) => s && (s.ribbons || []).some((r) => / Master$/.test(r)))) out.push("master");
+    return out;
+  }
+  const pkmBadgeHtml = (list) => (list || []).filter((b) => PKM_BADGE_ICONS[b]).slice(0, 4).map((b) => `<span class="ol-badge" title="${pkmEsc(PKM_BADGE_ICONS[b][1])}">${PKM_BADGE_ICONS[b][0]}</span>`).join("");
+  let pkmProfileSent = "";
+  async function pkmSyncProfile() {
+    const b = pkmMyBadges();
+    const k = b.join(",");
+    if (!pkmOnline() || k === pkmProfileSent) return;
+    pkmProfileSent = k;
+    await pkmApi("profile", { badges: b }).catch(() => { pkmProfileSent = ""; });
+  }
+
+  // ---------- Rewards from the server (only known item keys, sane amounts) ----------
+  const PKM_SAFE_ITEM = /^pkm_(item_[a-z0-9-]{2,30}|balls|great_balls|ultra_balls|master_balls|potions|revive)$/;
+  function pkmApplyServerReward(coins, items) {
+    const got = [];
+    const c = pkmClamp(parseInt(coins, 10) || 0, 0, 100000);
+    if (c) { setInt(STORAGE.coins, getInt(STORAGE.coins) + c); got.push(`${c} coins`); }
+    for (const it of Array.isArray(items) ? items : []) {
+      if (!Array.isArray(it) || !PKM_SAFE_ITEM.test(String(it[0]))) continue;
+      const n = pkmClamp(parseInt(it[1], 10) || 0, 0, 99);
+      if (!n) continue;
+      setInt(it[0], getInt(it[0]) + n);
+      got.push(`${n} x ${pkmSafeName(String(it[2] || it[0]).replace(/^pkm_(item_)?/, "").replace(/[-_]/g, " "), 30) || "item"}`);
+    }
+    return got.join(", ");
+  }
+
+  // ---------- Online panel: more tabs ----------
+  const PKM_NEW_TABS = [["live", "⚔️ Live"], ["ranks", "🏆 Ranks"], ["events", "🎉 Events"], ["friends", "👥 Friends"], ["contest", "🎀 Contest"]];
+  const pkmOnline2 = { ranks: null, board: "tower", events: null, friends: null, inbox: null, contest: null, cat: "cool", live: null };
+  {
+    const rf = pkmOnlineRefresh;
+    pkmOnlineRefresh = async function () {
+      if (!PKM_NEW_TABS.some(([k]) => k === pkmOnlineTab)) { await rf.apply(this, arguments); pkmSyncProfile(); return; }
+      pkmOnlineData.err = "";
+      if (!pkmOnline()) return;
+      try {
+        pkmSyncProfile();
+        if (pkmOnlineTab === "ranks") {
+          const p = pkmJSON("pkm_progress", {});
+          const shinies = Math.max(Object.keys(pkmJSON("pkm_species_shiny", {})).length, Object.values(getObj(STORAGE.party) || {}).filter((x) => x.isShiny).length, p.shinies || 0);
+          await Promise.all([
+            pkmApi("score_submit", { board: "tower", score: pkmTower().best || 0 }), pkmApi("score_submit", { board: "dex", score: (getArr(STORAGE.pokedex) || []).length }),
+            pkmApi("score_submit", { board: "shiny", score: shinies }), pkmApi("score_submit", { board: `ladder-${pkmWeekId()}`, score: pkmLadder().pts || 0 }),
+          ]);
+          pkmOnline2.ranks = pkmOnline2.board === "rating" ? await pkmApi("rating_top") : pkmOnline2.board === "guilds" ? await pkmApi("guild_top") : await pkmApi("score_top", { board: pkmOnline2.board === "ladder" ? `ladder-${pkmWeekId()}` : pkmOnline2.board });
+        } else if (pkmOnlineTab === "events") {
+          pkmOnline2.events = await pkmApi("events");
+          pkmSave("pkm_srv_events", { t: Date.now(), d: pkmOnline2.events });
+        } else if (pkmOnlineTab === "friends") {
+          const [f, g] = await Promise.all([pkmApi("friend_list"), pkmApi("fgift_inbox")]);
+          pkmOnline2.friends = f; pkmOnline2.inbox = g.gifts;
+        } else if (pkmOnlineTab === "contest") {
+          pkmOnline2.contest = await pkmApi("contest_board", { cat: pkmOnline2.cat });
+        }
+      } catch (e) { pkmOnlineData.err = e.message; }
+    };
+    const dr = pkmDrawOnline;
+    pkmDrawOnline = function () {
+      dr.apply(this, arguments);
+      const P = pkmOnlinePanel;
+      if (!P) return;
+      if (!P.dataset.v43) { P.dataset.v43 = "1"; P.addEventListener("click", pkmOnline2Click); }
+      const tabs = P.querySelector(".bag-tabs");
+      if (tabs) tabs.insertAdjacentHTML("beforeend", PKM_NEW_TABS.map(([k, l]) => `<button type="button" role="tab" data-otab="${k}" aria-selected="${pkmOnlineTab === k}">${l}</button>`).join(""));
+      if (pkmOnlineTab === "wonder" || pkmOnlineTab === "home") return;
+      if (pkmOnlineTab === "gts") {
+        for (const t of pkmOnlineData.gts || []) { const card = P.querySelector(`.ol-pay[data-for="${t.id}"]`)?.closest(".ol-card"); const dim = card && card.querySelector(".pkm-dim"); if (dim && t.badges && t.badges.length) dim.insertAdjacentHTML("beforeend", ` ${pkmBadgeHtml(t.badges)}`); }
+        return;
+      }
+      const body = P.querySelector(".lk-body");
+      if (!body || !pkmOnline()) return;
+      const head = [...body.children].filter((c) => c.classList.contains("ol-acct") || c.classList.contains("ol-err")).map((c) => c.outerHTML).join("");
+      body.innerHTML = head + pkmOnline2Body();
+    };
+  }
+  function pkmOnline2Body() {
+    const t = pkmOnlineTab;
+    const o = pkmOnline2;
+    if (t === "live") {
+      const L = o.live;
+      if (L && L.role === "host" && L.status === "wait") return `<div class="lv-code"><div class="pkm-dim">Send this code to your friend:</div><b>${pkmEsc(L.code)}</b><div class="pkm-dim">Waiting for them to join… The battle starts by itself.</div><div class="pkm-btns" style="justify-content:center"><button type="button" class="pkm-btn2" data-lv="cancel">Cancel</button></div></div>`;
+      return `<div class="pkm-dim">Battle a friend live, turn by turn. Your game runs the battle when you host; your friend picks their moves on their screen. Friend battles give no coins or XP.</div>
+        <div class="bag-sec"><span>Host a battle</span></div><div class="pkm-btns"><button type="button" class="pkm-btn2 primary" data-lv="host">⚔️ Create a battle code</button><button type="button" class="pkm-btn2" data-lv="ranked" title="Wins and losses change your live rating">🏅 Ranked battle</button><span class="pkm-dim">Uses your party</span></div>
+        <div class="bag-sec"><span>Join a friend</span></div><div class="pkm-btns"><input class="lv-join" maxlength="8" placeholder="Battle code" aria-label="Battle code" style="text-transform:uppercase"><button type="button" class="pkm-btn2 primary" data-lv="join">Join</button></div>
+        <div class="bag-sec"><span>Watch a battle</span></div><div class="pkm-btns"><input class="lv-watch" maxlength="8" placeholder="Battle code" aria-label="Battle code to watch" style="text-transform:uppercase"><button type="button" class="pkm-btn2" data-lv="watch">👀 Watch</button></div>
+        <div class="pkm-dim">Your live rating: <b>${pkmOnline2.rating == null ? "1000" : pkmOnline2.rating}</b>. See 🏆 Ranks → 🏅 Live rating.</div>`;
+    }
+    if (t === "ranks") {
+      const r = o.ranks;
+      const boards = [["tower", "🗼 Tower streak"], ["dex", "📕 Pokédex"], ["shiny", "✨ Shiny species"], ["ladder", "📈 Weekly ladder"], ["rating", "🏅 Live rating"], ["guilds", "🛡️ Guilds"], ["front-factory", "🏭 Factory"], ["front-arcade", "🎰 Arcade"], ["front-pike", "🪤 Pike"], ["front-hall", "🏛 Hall"], ["front-castle", "🏰 Castle"]];
+      return `<div class="pkm-btns">${boards.map(([k, l]) => `<button type="button" class="pkm-btn2 ${o.board === k ? "primary" : ""}" data-board="${k}">${l}</button>`).join("")}</div>
+        ${r && r.top ? `<div class="pkm-dim">${o.board === "guilds" ? `Guild damage this week (${pkmEsc(r.week || "")})` : `Your score: <b>${r.mine == null ? "-" : r.mine}</b>`}${r.rank ? ` · rank #${r.rank}` : ""}</div>
+        <table class="lb-table"><tr><th>#</th><th>Trainer</th><th>Score</th></tr>${r.top.map((x) => `<tr class="${x.me ? "me" : ""}"><td>${x.rank}</td><td>${x.tag ? `[${pkmEsc(x.tag)}] ` : ""}${pkmEsc(x.name)} ${pkmBadgeHtml(x.badges)}${x.wl ? ` <span class="pkm-dim">${pkmEsc(x.wl)}</span>` : ""}${x.members ? ` <span class="pkm-dim">${x.members} members</span>` : ""}</td><td>${x.score.toLocaleString()}</td></tr>`).join("") || `<tr><td colspan="3" class="pkm-dim">Nobody yet. Be the first!</td></tr>`}</table>` : `<div class="pkm-dim">Loading…</div>`}`;
+    }
+    if (t === "events") {
+      const e = o.events;
+      if (!e) return `<div class="pkm-dim">Loading…</div>`;
+      const g = e.gift, r = e.raid, ob = e.outbreak;
+      const pct = Math.min(100, Math.round((r.total / r.hp) * 100));
+      const down = r.total >= r.hp;
+      return `<div class="ev-card"><b>🎁 ${pkmEsc(g.title)}</b><div class="pkm-dim">${g.coins ? `${g.coins} coins` : ""}${(g.items || []).map((x) => ` · ${pkmEsc(String(x[1]))} x ${pkmEsc(String(x[2] || x[0]))}`).join("")}</div><button type="button" class="pkm-btn2 primary" data-ev="gift" ${g.claimed ? "disabled" : ""}>${g.claimed ? "Opened ✓" : "Open the gift"}</button></div>
+        <div class="ev-card"><b>🔥 ${pkmEsc(r.title)}: ${pkmEsc(pkmCap(r.species))}</b><div class="pkm-dim">Everyone's damage adds up. ${r.players} trainer${r.players === 1 ? "" : "s"} joined. You dealt ${r.mine.toLocaleString()}. Fights today: ${r.hitsToday}/5.</div>
+          <div class="bc-bar ev-bar"><span style="width:${pct}%"></span></div><div class="pkm-dim">${down ? "💥 The boss is down!" : `${r.total.toLocaleString()} / ${r.hp.toLocaleString()} HP (${pct}%)`}</div>
+          <div class="pkm-btns"><button type="button" class="pkm-btn2 primary" data-ev="raid" ${down || r.hitsToday >= 5 ? "disabled" : ""}>⚔️ Fight the boss</button><button type="button" class="pkm-btn2" data-ev="raidclaim" ${down && r.mine > 0 && !r.claimed ? "" : "disabled"}>${r.claimed ? "Prize collected ✓" : "Collect the prize"}</button></div></div>
+        <div class="ev-card"><b>📣 ${pkmEsc(ob.title)}: ${pkmEsc(pkmCap(ob.species))}</b><div class="pkm-dim">${pkmEsc(pkmCap(ob.species))} shows up often in the Safari Zone this week.</div><button type="button" class="pkm-btn2" data-ev="safari">🦒 Go to the Safari Zone</button></div>`;
+    }
+    if (t === "friends") {
+      const f = o.friends;
+      if (!f) return `<div class="pkm-dim">Loading…</div>`;
+      const code = String(f.code || "").replace(/(\d{4})(?=\d)/g, "$1-");
+      const giftOpts = `<option value="coins">200 coins</option><option value="ub">2 Ultra Balls</option><option value="gb">5 Great Balls</option><option value="pot">3 Potions</option><option value="mon">A Pokémon…</option>`;
+      return `<div class="fr-me">Your friend code: <b>${pkmEsc(code)}</b> <button type="button" class="pkm-btn2" data-fr="copy">📋</button></div>
+        <div class="pkm-btns"><input class="fr-add" placeholder="Friend's code (12 digits)" aria-label="Friend code"><button type="button" class="pkm-btn2 primary" data-fr="add">Add friend</button></div>
+        ${(o.inbox || []).length ? `<div class="bag-sec"><span>🎁 Gifts for you</span></div>${o.inbox.map((g) => `<div class="ol-card"><div class="ol-main"><b>From ${pkmEsc(g.from)}</b><div class="pkm-dim">${g.kind === "coins" ? `${g.gift.coins} coins` : g.kind === "item" ? `${g.gift.n} x ${pkmEsc(g.gift.label || g.gift.item)}` : pkmEsc(pkmShareLabel(g.gift.mon))}</div></div><button type="button" class="pkm-btn2 primary" data-gopen="${g.id}">Open</button></div>`).join("")}` : ""}
+        <div class="bag-sec"><span>Friends</span><span class="pkm-dim">${f.friends.length}</span></div>
+        ${f.friends.length ? f.friends.map((x) => `<div class="ol-card fr-row"><div class="ol-main"><b>${pkmEsc(x.name)} ${pkmBadgeHtml(x.badges)}</b><div class="pkm-dim">Last seen ${new Date(x.seen * 1000).toLocaleDateString()}</div>
+            <div class="pkm-btns">${x.canGift ? `<select class="fr-kind" data-to="${x.pid}" aria-label="Gift">${giftOpts}</select><select class="fr-mon" data-to="${x.pid}" aria-label="Pokémon to give" hidden>${pkmSendOptions()}</select><button type="button" class="pkm-btn2" data-gift="${x.pid}">🎁 Send</button>` : `<span class="pkm-dim">Gift sent today ✓</span>`}<button type="button" class="pkm-btn2" data-unfriend="${x.pid}" title="Remove friend">✕</button></div></div></div>`).join("") : `<div class="pkm-dim">Share your code with friends and add theirs. You can send each friend one gift a day.</div>`}`;
+    }
+    if (t === "contest") {
+      const c = o.contest;
+      const cats = Object.entries(PKM_CONTEST);
+      return `<div class="pkm-dim">Enter one Pokémon in each contest every week. The best appeal wins. Prizes for last week's top 3 (5000, 3000 and 1500 coins), and 300 coins just for taking part.</div>
+        <div class="pkm-btns">${cats.map(([k, v]) => `<button type="button" class="pkm-btn2 ${pkmOnline2.cat === k ? "primary" : ""}" data-ccat="${k}">${v.icon} ${v.name}</button>`).join("")}</div>
+        <div class="pkm-btns"><select class="ct-mon" aria-label="Pokémon to enter">${pkmSendOptions() || ""}<option value="${pkmEsc(GM_getValue("pkm_starter_id", ""))}">Your partner</option></select><button type="button" class="pkm-btn2 primary" data-ct="enter">Enter this week</button><button type="button" class="pkm-btn2" data-ct="claim">Collect last week's prize</button></div>
+        ${c ? `<div class="bag-sec"><span>${pkmEsc(PKM_CONTEST[pkmOnline2.cat].name)} contest · week ${pkmEsc(c.week.split("-W")[1])}</span></div>
+          ${c.entries.length ? `<table class="lb-table"><tr><th>#</th><th>Trainer</th><th>Pokémon</th><th>Appeal</th></tr>${c.entries.map((x) => `<tr class="${x.me ? "me" : ""}"><td>${x.rank}</td><td>${pkmEsc(x.name)} ${pkmBadgeHtml(x.badges)}</td><td><img src="${pkmEsc(pkmShareSprite(x.mon))}" alt="" class="lb-spr">${pkmEsc(pkmShareLabel(x.mon))}</td><td>${x.score}</td></tr>`).join("")}</table>` : `<div class="pkm-dim">No entries yet this week.</div>`}` : `<div class="pkm-dim">Loading…</div>`}`;
+    }
+    return "";
+  }
+  /** Appeal for an online contest, from the Pokémon's stats, types, friendship and ribbons. */
+  async function pkmContestScore(id, cat) {
+    const c = PKM_CONTEST[cat];
+    const m = await pkmBuildInstance(id);
+    if (!m || !c) return 0;
+    const s = (getObj(STORAGE.stats) || {})[id] || {};
+    const stat = c.stats.reduce((n, k) => n + (m.stats[k] || 0), 0) / 3;
+    const type = m.types.some((x) => c.types.includes(x)) ? 60 : 0;
+    const fr = (s.friendship == null ? 70 : s.friendship) / 4;
+    return pkmClamp(Math.round(stat + type + fr + (s.ribbons || []).length * 8 + m.level / 2 + (m.shiny ? 15 : 0)), 0, 999);
+  }
+  async function pkmOnline2Click(e) {
+    const P = pkmOnlinePanel;
+    if (!P) return;
+    const g = (k) => e.target.closest(`[${k}]`);
+    if (g("data-board")) { pkmOnline2.board = g("data-board").dataset.board; pkmOnline2.ranks = null; pkmDrawOnline(); return pkmOnlineDo(pkmOnlineRefresh); }
+    if (g("data-ccat")) { pkmOnline2.cat = g("data-ccat").dataset.ccat; pkmOnline2.contest = null; pkmDrawOnline(); return pkmOnlineDo(pkmOnlineRefresh); }
+    const ev = g("data-ev")?.dataset.ev;
+    if (ev === "gift") return pkmOnlineDo(async () => { const r = await pkmApi("gift_claim", { id: pkmOnline2.events.gift.id }); pkmToast(`🎁 You got ${pkmApplyServerReward(r.coins, r.items)}!`, 5000); await pkmOnlineRefresh(); });
+    if (ev === "raidclaim") return pkmOnlineDo(async () => { const r = await pkmApi("raid_claim", { id: pkmOnline2.events.raid.id }); pkmToast(`🏆 Raid prize: ${pkmApplyServerReward(r.coins, r.items)}!`, 5000); await pkmOnlineRefresh(); });
+    if (ev === "raid") return pkmGlobalRaidFight(pkmOnline2.events.raid);
+    if (ev === "safari") { pkmCloseOnline(); return pkmOpenSafari(); }
+    const fr = g("data-fr")?.dataset.fr;
+    if (fr === "copy") { navigator.clipboard?.writeText(String(pkmOnline2.friends.code)).then(() => pkmToast("Friend code copied.")); return; }
+    if (fr === "add") return pkmOnlineDo(async () => { const r = await pkmApi("friend_add", { code: P.querySelector(".fr-add").value }); pkmToast(`👥 ${r.name} is your friend now!`); await pkmOnlineRefresh(); });
+    if (g("data-unfriend")) return pkmOnlineDo(async () => { await pkmApi("friend_remove", { target: +g("data-unfriend").dataset.unfriend }); await pkmOnlineRefresh(); });
+    if (g("data-gift")) return pkmOnlineDo(() => pkmSendFriendGift(+g("data-gift").dataset.gift));
+    if (g("data-gopen")) return pkmOnlineDo(async () => {
+      const r = await pkmApi("fgift_claim", { id: +g("data-gopen").dataset.gopen });
+      let what = "";
+      if (r.kind === "coins") what = pkmApplyServerReward(Math.min(1000, r.gift.coins), []);
+      else if (r.kind === "item") what = pkmApplyServerReward(0, [[r.gift.item, Math.min(5, r.gift.n), r.gift.label]]);
+      else if (r.kind === "mon") { await pkmDeliver(r.gift.mon, "gift"); what = pkmShareLabel(r.gift.mon); }
+      pkmToast(`🎁 ${r.from} sent you ${what}!`, 5000);
+      await pkmOnlineRefresh();
+    });
+    const ct = g("data-ct")?.dataset.ct;
+    if (ct === "enter") return pkmOnlineDo(async () => {
+      const id = P.querySelector(".ct-mon").value;
+      const mon = pkmMonShare(id);
+      if (!mon) throw new Error("Pick a Pokémon.");
+      mon.h = ""; mon.g = pkmGenderOf(id);
+      const score = await pkmContestScore(id, pkmOnline2.cat);
+      await pkmApi("contest_enter", { cat: pkmOnline2.cat, mon, score });
+      pkmToast(`🎀 ${pkmCap(mon.s)} entered with an appeal of ${score}!`, 4000);
+      await pkmOnlineRefresh();
+    });
+    if (ct === "claim") return pkmOnlineDo(async () => { const r = await pkmApi("contest_claim", { cat: pkmOnline2.cat }); pkmToast(`🎀 You placed #${r.rank} last week! ${pkmApplyServerReward(Math.min(5000, r.coins), [])}.`, 5000); });
+    const lv = g("data-lv")?.dataset.lv;
+    if (lv === "host") return pkmOnlineDo(() => pkmLiveHost(false));
+    if (lv === "ranked") return pkmOnlineDo(() => pkmLiveHost(true));
+    if (lv === "watch") { const code = P.querySelector(".lv-watch").value.trim(); if (!code) return pkmToast("Type the battle code to watch."); pkmCloseOnline(); return pkmOpenLive(0, "", code); }
+    if (lv === "join") return pkmOnlineDo(() => pkmLiveJoin(P.querySelector(".lv-join").value));
+    if (lv === "cancel") { pkmLiveStopPoll(); if (pkmOnline2.live) pkmApi("live_leave", { id: pkmOnline2.live.id }).catch(() => {}); pkmOnline2.live = null; return pkmDrawOnline(); }
+  }
+  // the friend-gift kind picker shows the Pokémon list when "A Pokémon…" is chosen
+  document.addEventListener("change", (e) => {
+    const el = e.composedPath()[0];
+    if (!el || !el.classList || !el.classList.contains("fr-kind")) return;
+    const mon = el.parentElement.querySelector(".fr-mon");
+    if (mon) mon.hidden = el.value !== "mon";
+  }, true);
+  async function pkmSendFriendGift(to) {
+    const P = pkmOnlinePanel;
+    const kind = P.querySelector(`.fr-kind[data-to="${to}"]`).value;
+    const items = { ub: [STORAGE.ultraBalls, 2, "Ultra Balls"], gb: [STORAGE.greatBalls, 5, "Great Balls"], pot: [STORAGE.potions, 3, "Potions"] };
+    if (kind === "coins") {
+      if (getInt(STORAGE.coins) < 200) throw new Error("You need 200 coins.");
+      await pkmApi("fgift_send", { to, kind: "coins", amount: 200 });
+      setInt(STORAGE.coins, getInt(STORAGE.coins) - 200);
+    } else if (items[kind]) {
+      const [key, n, label] = items[kind];
+      if (getInt(key) < n) throw new Error(`You need ${n} ${label}.`);
+      await pkmApi("fgift_send", { to, kind: "item", item: key, amount: n, label });
+      setInt(key, getInt(key) - n);
+    } else {
+      const id = P.querySelector(`.fr-mon[data-to="${to}"]`).value;
+      const p = pkmPackForSend(id);
+      if (p.err) throw new Error(p.err);
+      await pkmApi("fgift_send", { to, kind: "mon", mon: p.mon });
+      pkmRemoveMon(id);
+    }
+    pkmToast("🎁 Gift sent!");
+    await pkmOnlineRefresh();
+  }
+
+  // ---------- Shared raid (everyone's damage adds up) ----------
+  function pkmGlobalRaidFight(r, backTab = "events") {
+    if (!r) return;
+    pkmForcedWild = { name: r.species, level: pkmClamp(r.level || 75, 1, MAX_LEVEL), globalRaid: r.id };
+    pkmPostBattle = () => pkmOpenOnline(backTab);
+    pkmCloseOnline();
+    openBattle();
+    if (!battlePanel) { pkmForcedWild = null; pkmPostBattle = null; }
+  }
+  {
+    const pw = pkmPickWild;
+    pkmPickWild = async function () {
+      const f = pkmForcedWild;
+      const m = await pw.apply(this, arguments);
+      if (m && f && f.globalRaid) { m.maxHP = m.maxHP * 12; m.hp = m.maxHP; m.globalRaid = f.globalRaid; m.display = `Raid Boss ${m.display}`; }
+      return m;
+    };
+    const tb = throwBall;
+    throwBall = function () { if (pkb && pkb.foe && pkb.foe.globalRaid) return drawBattle("You can't catch the shared raid boss. Hit it as hard as you can!"); return tb.apply(this, arguments); };
+    const tn = pkmTurn;
+    pkmTurn = async function () {
+      const b = pkb;
+      const r = await tn.apply(this, arguments);
+      if (b && b.foe && b.foe.globalRaid && pkmAlive(b) && !b.over) {
+        b.raidTurns = (b.raidTurns || 0) + 1;
+        if (b.raidTurns >= 10) { b.over = true; b.result = "Raid"; await pkmSay(b, "The raid boss is too strong! Time's up after 10 turns.", 1200); closeBattle(); }
+      }
+      return r;
+    };
+    const cb = closeBattle;
+    closeBattle = function (...a) {
+      const b = pkb;
+      if (b && b.foe && b.foe.globalRaid) {
+        const dmg = Math.max(0, Math.round(b.foe.maxHP - Math.max(0, b.foe.hp)));
+        const id = b.foe.globalRaid;
+        b.foe.globalRaid = null;
+        pkmApi(/^guild-/.test(id) ? "guild_raid_hit" : "raid_hit", { id, dmg }).then((x) => pkmToast(`🔥 You dealt ${x.added.toLocaleString()} damage to the raid boss! Total: ${x.total.toLocaleString()} / ${x.hp.toLocaleString()}.`, 5000), (e) => pkmToast(e.message, 4000));
+      }
+      return cb.apply(this, a);
+    };
+  }
+
+  // ---------- Live battles ----------
+  let pkmLivePoll = null;
+  const pkmLiveStopPoll = () => { if (pkmLivePoll) clearInterval(pkmLivePoll); pkmLivePoll = null; };
+  const pkmLiveTeam = () => Object.keys(getObj(STORAGE.party) || {}).slice(0, PKM_PARTY_SIZE).map((id) => { const m = pkmMonShare(id); if (m) { m.h = ""; m.g = pkmGenderOf(id); } return m; }).filter(Boolean);
+  async function pkmLiveHost(ranked, bo3) {
+    const team = pkmLiveTeam();
+    if (!team.length) throw new Error("You need a party first.");
+    await pkmOnlineLogin();
+    const r = await pkmApi("live_create", { team, ranked: !!ranked, bo3: !!bo3 });
+    pkmOnline2.live = { id: r.id, code: r.code, role: "host", status: "wait", ranked: !!ranked };
+    pkmLiveStopPoll();
+    pkmLivePoll = setInterval(async () => {
+      if (!pkmOnline2.live || pkmOnline2.live.id !== r.id) return pkmLiveStopPoll();
+      try {
+        const x = await pkmApi("live_get", { id: r.id });
+        if (x.status === "live" && Array.isArray(x.guestTeam)) { pkmLiveStopPoll(); pkmOnline2.live = null; pkmLiveStart(x); }
+        else if (x.status === "over") { pkmLiveStopPoll(); pkmOnline2.live = null; if (pkmOnlinePanel) pkmDrawOnline(); }
+      } catch {}
+    }, 2000);
+  }
+  function pkmLiveStart(x) {
+    const team = x.guestTeam.map(pkmCleanShare).filter(Boolean).map((m) => ({ ...m, held: null }));
+    if (!team.length) return pkmToast("Your friend's team didn't load.");
+    pkmCloseOnline();
+    pkmToast(`⚔️ ${x.guest} joined! The battle starts.`, 3000);
+    pkmPostBattle = () => pkmOpenOnline("live");
+    const bo3 = !!(x.bo3 || (x.series && x.series.bo === 3));
+    if (bo3) healPokemon();
+    pkmStartTrainer({ title: bo3 ? `Live battle · game ${(x.series && x.series.game) || 1} of 3` : "Live battle", name: x.guest || "Friend", sprite: `${PKM_TRAINER_IMG}acetrainer.png`, lose: "GG!", team, pvp: true, gym: 0, live: { id: x.id, turn: 1, last: "", guestTeam: x.guestTeam, bo3, series: x.series || null } });
+    if (!battlePanel) pkmPostBattle = null;
+  }
+  const pkmLiveMini = (m) => (m ? { n: m.display, lv: m.level, hp: Math.max(0, m.hp), max: m.maxHP, st: m.status || "", img: m.front, t: m.types } : null);
+  function pkmLiveSnapshot(b, over) {
+    const L = b.trainer.live;
+    const pct = (m) => (m ? Math.max(0, Math.round((m.hp / m.maxHP) * 100)) : 0);
+    return {
+      turn: L.turn, over: !!over, winner: over ? (b.result === "Won" ? "host" : "guest") : null, msg: b.msg || "",
+      host: { name: pkmTrainerName(), mon: pkmLiveMini(b.me), team: b.roster.map((r) => (r.mon ? pct(r.mon) : pkmRosterHP(r).hp > 0 ? 100 : 0)) },
+      guest: { mon: pkmLiveMini(b.foe), team: b.team.map(pct), moves: (b.foe.moves || []).map((m) => ({ n: m.display, t: m.type, pp: m.pp, max: m.maxPP, s: m.cls === "status" ? 1 : 0 })),
+        bench: b.team.map((m, i) => ({ i, n: m.display, hp: Math.max(0, m.hp), max: m.maxHP, cur: m === b.foe ? 1 : 0, img: m.front })) },
+      log: (b.log || []).slice(-8),
+    };
+  }
+  async function pkmLivePush(b, over) {
+    if (!b || !b.trainer || !b.trainer.live || !b.me || !b.foe || !b.team || !b.roster) return;
+    const s = pkmLiveSnapshot(b, over);
+    const k = JSON.stringify(s);
+    if (!over && k === b.trainer.live.last) return;
+    b.trainer.live.last = k;
+    return await pkmApi("live_state", { id: b.trainer.live.id, turn: b.trainer.live.turn, state: s }).catch(() => null);
+  }
+  setInterval(() => { const b = pkb; if (b && b.trainer && b.trainer.live && !b.over) pkmLivePush(b); }, 2000);
+  /** The guest asked to switch: the host's game sends in that Pokémon (it uses up the guest's turn). */
+  async function pkmLiveFoeSwitch(b, i) {
+    const m = b.team[i];
+    if (!m || m.hp <= 0 || m === b.foe) return false;
+    const old = b.foe;
+    old.stages = { atk: 0, def: 0, spa: 0, spd: 0, spe: 0, acc: 0, eva: 0 };
+    old.confused = 0; old.charging = null; old.invuln = false; old.sub = 0; old.mustRecharge = false; old.entered = false;
+    pkmEndDynamax(old);
+    b.foe = m;
+    b.foeIdx = i;
+    b.shown && (b.shown.foe = null);
+    pkmSyncGlobals(b);
+    await pkmSay(b, `${b.trainer.name} called back ${old.display} and sent out ${m.display}!`, 900);
+    await pkmOnEntry(b, b.foe, b.me);
+    return true;
+  }
+  {
+    const um = pkmUseMove;
+    pkmUseMove = async function (b, att) {
+      if (b && b.liveSkipFoe && att === b.foe) { b.liveSkipFoe = false; return; }
+      return um.apply(this, arguments);
+    };
+  }
+  async function pkmLiveWaitMove(b) {
+    const L = b.trainer.live;
+    const t0 = Date.now();
+    await pkmLivePush(b);
+    while (pkmAlive(b) && Date.now() - t0 < 90000) {
+      try {
+        const x = await pkmApi("live_get", { id: L.id });
+        if (x.status === "over") return "forfeit";
+        if (x.guestMove && x.guestMove.turn === L.turn) return x.guestMove.move;
+      } catch {}
+      await new Promise((r) => setTimeout(r, 1500));
+    }
+    return null;
+  }
+  {
+    const tn = pkmTurn;
+    pkmTurn = async function () {
+      const b = pkb;
+      if (!b || !b.trainer || !b.trainer.live || b.liveGo) return tn.apply(this, arguments);
+      if (b.busy || b.awaitSwitch || b.awaitRevive || !pkmAlive(b)) return;
+      b.busy = true;
+      drawBattle(`Waiting for ${b.trainer.name} to choose a move…`);
+      const mv = await pkmLiveWaitMove(b);
+      b.busy = false;
+      if (!pkmAlive(b)) return;
+      if (mv === "forfeit") {
+        await pkmSay(b, `${b.trainer.name} forfeited the battle.`, 1200);
+        b.team.forEach((m) => { m.hp = 0; });
+        return pkmWin(b);
+      }
+      b.liveMove = mv == null ? null : mv;
+      if (typeof mv === "string" && /^s\d$/.test(mv)) { b.liveMove = null; if (await pkmLiveFoeSwitch(b, +mv.slice(1))) b.liveSkipFoe = true; if (!pkmAlive(b)) return; }
+      b.liveGo = true;
+      try { await tn.apply(this, arguments); } finally { b.liveGo = false; b.liveSkipFoe = false; }
+      b.trainer.live.turn++;
+      pkmLivePush(b);
+    };
+    const ai = pkmAiMove;
+    pkmAiMove = function (foe, me, b) {
+      const bb = b || pkb;
+      if (bb && bb.trainer && bb.trainer.live && bb.liveMove != null && foe === bb.foe) {
+        const m = foe.moves[bb.liveMove];
+        bb.liveMove = null;
+        if (m && m.pp > 0) return m;
+      }
+      return ai.apply(this, arguments);
+    };
+    const cb = closeBattle;
+    closeBattle = function (...a) {
+      const b = pkb;
+      if (b && b.trainer && b.trainer.live && !b.trainer.live.done) {
+        b.trainer.live.done = true;
+        if (!b.result) b.result = "Lost";
+        const L = b.trainer.live, guest = b.trainer.name;
+        const pr = pkmLivePush(b, true);
+        if (L.bo3) {
+          const pb = pkmPostBattle;
+          pkmPostBattle = () => pr.then((res) => {
+            const se = res && res.series;
+            if (se && !se.done) {
+              pkmToast(`⚔️ Best of 3: ${se.host}–${se.guest}. Game ${se.game} starts…`, 3000);
+              setTimeout(() => pkmLiveStart({ id: L.id, guest, guestTeam: L.guestTeam, bo3: true, series: { bo: 3, ...se } }), 1800);
+            } else {
+              if (se) pkmToast(se.winner === "host" ? `🏆 You won the series ${se.host}–${se.guest}!` : `You lost the series ${se.host}–${se.guest}. GG!`, 5000);
+              if (pb) pb();
+            }
+          });
+        }
+      }
+      return cb.apply(this, a);
+    };
+  }
+  // Guest side: a small screen that shows the host's battle and sends your moves
+  let pkmLivePanel = null;
+  let pkmLiveView = null;
+  function pkmCloseLive() { pkmLiveStopPoll(); if (pkmLivePanel) pkmLivePanel.remove(); pkmLivePanel = null; pkmLiveView = null; }
+  async function pkmLiveJoin(code) {
+    const team = pkmLiveTeam();
+    if (!team.length) throw new Error("You need a party first.");
+    await pkmOnlineLogin();
+    const r = await pkmApi("live_join", { code: String(code || "").trim(), team });
+    pkmCloseOnline();
+    pkmOpenLive(r.id, r.host);
+  }
+  function pkmOpenLive(id, host, watchCode) {
+    pkmCloseLive();
+    pkmLiveView = { id, host, x: null, sent: 0, lastSeen: Date.now(), watch: watchCode || "" };
+    pkmLivePanel = pkmMakePanel("pkm-live", "Live battle", (e) => {
+      const v = pkmLiveView;
+      if (!v) return;
+      if (e.target.closest("[data-a='close']") && v.watch) return pkmCloseLive();
+      if (e.target.closest("[data-a='close']")) { if (v.x && v.x.status !== "over" && !confirm("Leave the battle? You'll lose.")) return; if (v.x && v.x.status !== "over") pkmApi("live_move", { id, turn: (v.x.state || {}).turn || 0, move: "forfeit" }).catch(() => {}); return pkmCloseLive(); }
+      const mv = e.target.closest("[data-lmove]");
+      if (mv && !mv.disabled && v.x && v.x.state) {
+        const turn = v.x.state.turn;
+        const m = mv.dataset.lmove === "forfeit" ? "forfeit" : /^s\d$/.test(mv.dataset.lmove) ? mv.dataset.lmove : +mv.dataset.lmove;
+        v.sent = turn;
+        pkmApi("live_move", { id, turn, move: m }).catch((err) => { v.sent = 0; pkmToast(err.message); });
+        pkmDrawLive();
+      }
+    });
+    pkmDrawLive();
+    const tick = async () => {
+      const v = pkmLiveView;
+      if (!v || v.id !== id) return;
+      try {
+        const x = v.watch ? await pkmApi("live_watch", { code: v.watch }) : await pkmApi("live_get", { id });
+        if (!pkmLiveView) return;
+        if (v.watch) { v.host = x.host; v.guestName = x.guest; }
+        if (v.x && x.series && v.x.series && x.series.game !== v.x.series.game) v.sent = 0;
+        if (!v.x || x.updated !== v.x.updated || (x.state || {}).turn !== ((v.x || {}).state || {}).turn) v.lastSeen = Date.now();
+        v.x = x;
+        pkmDrawLive();
+        if (x.status === "over") pkmLiveStopPoll();
+      } catch (err) { v.err = err.message; pkmDrawLive(); }
+    };
+    tick();
+    pkmLivePoll = setInterval(tick, 1500);
+  }
+  function pkmDrawLive() {
+    const v = pkmLiveView;
+    const P = pkmLivePanel;
+    if (!v || !P) return;
+    const s = v.x && v.x.state;
+    const bar = (m) => { const p = m ? Math.round((m.hp / m.max) * 100) : 0; return `<div class="pkb-hp"><span style="width:${p}%;background:${p > 50 ? "#2fbf71" : p > 20 ? "#ffb020" : "#ff4d4f"}"></span></div>`; };
+    const side = (m, team, label) => (m ? `<div class="lvw-side"><img src="${pkmEsc(m.img)}" alt=""><div><b>${pkmEsc(label)}: ${pkmEsc(m.n)}</b> <span class="pkm-dim">Lv ${m.lv}${m.st ? ` · ${pkmEsc(m.st.toUpperCase())}` : ""}</span>${bar(m)}<div class="pkm-dim">${m.hp}/${m.max} HP · ${team.map((p) => (p > 0 ? "●" : "○")).join("")}</div></div></div>` : "");
+    let body;
+    if (!s) body = `<div class="pkm-dim">${v.x && v.x.status === "live" ? `Waiting for ${pkmEsc(v.host)} to start…` : "Connecting…"}</div>`;
+    else {
+      const waiting = v.sent === s.turn;
+      const stale = Date.now() - v.lastSeen > 180000 && !s.over;
+      if (v.watch) {
+        body = `<div class="pkm-dim">👀 Watching${v.x && v.x.ranked ? " a ranked battle" : ""}</div>${side(s.host.mon, s.host.team, s.host.name)}${side(s.guest.mon, s.guest.team, v.guestName || "Guest")}
+          <div class="lvw-log">${(s.log || []).map((l) => `<div>${pkmEsc(l)}</div>`).join("")}</div>
+          ${s.over ? `<div class="lvw-end">🏆 ${pkmEsc(s.winner === "host" ? s.host.name : v.guestName || "Guest")} won!</div>` : ""}`;
+        P.innerHTML = `${pkmPanelHead(`👀 ${pkmEsc(v.host || "")} vs ${pkmEsc(v.guestName || "")}`, "lv-head")}<div class="lk-body">${v.err ? `<div class="bag-msg ol-err">⚠️ ${pkmEsc(v.err)}</div>` : ""}${body}</div>`;
+        return;
+      }
+      const bench = (s.guest.bench || []).filter((m) => !m.cur);
+      body = `${side(s.host.mon, s.host.team, s.host.name)}${side(s.guest.mon, s.guest.team, "You")}
+        <div class="lvw-log">${(s.log || []).map((l) => `<div>${pkmEsc(l)}</div>`).join("")}</div>
+        ${s.over ? `<div class="lvw-end">${s.winner === "guest" ? "🏆 You won!" : "You lost. Good game!"}</div>`
+          : stale ? `<div class="pkm-dim">${pkmEsc(v.host)} hasn't moved for a while. They may have left.</div>`
+          : `<div class="pkm-dim">${waiting ? `Waiting for ${pkmEsc(v.host)}…` : "Choose your move:"}</div>
+            <div class="pk-controls lvw-moves">${s.guest.moves.map((m, i) => `<button type="button" class="pk-btn pkb-move t-${pkmEsc(m.t)}" data-lmove="${i}" ${waiting || m.pp <= 0 || s.guest.mon.hp <= 0 ? "disabled" : ""}><div class="pk-label">${pkmEsc(m.n)}</div><div class="pkb-mv-sub"><span class="pk-type ${pkmEsc(m.t)}">${pkmEsc(m.t)}</span><span>PP ${m.pp}/${m.max}</span></div></button>`).join("")}
+            <button type="button" class="pk-btn pkb-act" data-lmove="forfeit" ${waiting ? "disabled" : ""}><div class="pk-ico">🏳️</div><div class="pk-label">Forfeit</div></button></div>
+            ${bench.length ? `<div class="pkm-dim">Or switch (uses your turn):</div><div class="pkm-btns lvw-bench">${bench.map((m) => `<button type="button" class="pkm-btn2" data-lmove="s${m.i}" ${waiting || m.hp <= 0 ? "disabled" : ""}><img src="${pkmEsc(m.img)}" alt="" class="lb-spr">${pkmEsc(m.n)} <span class="pkm-dim">${m.hp}/${m.max}</span></button>`).join("")}</div>` : ""}`}`;
+    }
+    const se = v.x && v.x.series;
+    if (se && se.bo === 3) body = `<div class="lvw-series">Best of 3 · game ${se.game} · <b>${pkmEsc(v.host || "Host")} ${se.host} – ${se.guest} You</b></div>` + body;
+    P.innerHTML = `${pkmPanelHead(`⚔️ Live battle vs ${pkmEsc(v.host || "Friend")}`, "lv-head")}<div class="lk-body">${v.err ? `<div class="bag-msg ol-err">⚠️ ${pkmEsc(v.err)}</div>` : ""}${body}</div>`;
+  }
+
+  // ---------- Shared replays (Options → Battle logs) ----------
+  {
+    const dro = pkmDrawOptions;
+    pkmDrawOptions = function () {
+      const r = dro.apply(this, arguments);
+      const P = pkmOptionsPanel;
+      if (!P || pkmOptionsTab !== "logs" || P.querySelector(".rp-open")) return r;
+      const body = P.querySelector(".lk-body");
+      body.insertAdjacentHTML("afterbegin", `<div class="pkm-btns rp-open"><input class="rp-id" placeholder="Paste a replay link or code" aria-label="Replay link" style="flex:1"><button type="button" class="pkm-btn2" data-rp="open">▶ Watch</button></div>`);
+      P.querySelectorAll("[data-log]").forEach((b) => b.insertAdjacentHTML("afterend", `<button type="button" class="pkm-btn2" data-rpshare="${b.dataset.log}" title="Share a link to this replay">🔗 Share</button>`));
+      P.querySelectorAll("[data-rp],[data-rpshare]").forEach((b) => (b.onclick = async (e) => {
+        e.stopPropagation();
+        try {
+          if (b.dataset.rp === "open") {
+            const m = /([a-z0-9]{10})\s*$/.exec(P.querySelector(".rp-id").value.trim());
+            if (!m) return pkmToast("Paste a replay link (it ends in a 10-letter code).");
+            const x = await pkmApi("replay_get", { id: m[1] });
+            pkmReplayLog = { t: x.created * 1000, title: `${x.title} (by ${x.owner})`, result: x.result, lines: x.lines };
+            return pkmDrawOptions();
+          }
+          const log = pkmJSON("pkm_battle_logs", [])[+b.dataset.rpshare];
+          if (!log) return;
+          await pkmOnlineLogin();
+          const x = await pkmApi("replay_share", { title: log.title, result: log.result || "", lines: log.lines });
+          const url = `${pkmServerUrl()}replay.php?id=${x.id}`;
+          navigator.clipboard?.writeText(url).catch(() => {});
+          pkmToast(`🔗 Replay link copied: ${url}`, 7000);
+        } catch (err) { pkmToast(err.message || "Couldn't reach the game server.", 4000); }
+      }));
+      return r;
+    };
+  }
+
+  // ---------- Safari outbreak (from the server, or a weekly pick when offline) ----------
+  const PKM_OUTBREAK_LOCAL = ["eevee", "dratini", "chansey", "scyther", "pinsir", "tauros", "kangaskhan", "larvitar", "bagon", "gible", "riolu", "axew", "deino", "goomy", "jangmo-o", "dreepy", "ralts", "beldum"];
+  function pkmOutbreakSpecies() {
+    const c = pkmJSON("pkm_srv_events", null);
+    const o = c && c.d && c.d.outbreak;
+    if (o && o.species && (!o.ends || o.ends * 1000 > Date.now()) && c.d.week === pkmWeekId()) return o.species;
+    const w = pkmWeekId();
+    return PKM_OUTBREAK_LOCAL[(parseInt(w.slice(-2), 10) + parseInt(w.slice(0, 4), 10)) % PKM_OUTBREAK_LOCAL.length];
+  }
+  const pkmSafariOutbreakPick = () => (Math.random() < 0.3 ? pkmOutbreakSpecies() : null);
+  {
+    const ds = pkmDrawSafari;
+    pkmDrawSafari = function () {
+      const r = ds.apply(this, arguments);
+      const P = pkmSafariPanel;
+      if (P && !P.querySelector(".sf-outbreak")) { const bar = P.querySelector(".sf-bar") || P.querySelector(".pkm-set-head"); if (bar) bar.insertAdjacentHTML("afterend", `<div class="sf-outbreak">📣 Outbreak this week: <b>${pkmEsc(pkmCap(pkmOutbreakSpecies()))}</b> appears often!</div>`); }
+      return r;
+    };
+  }
+
+  // ---------- Weather events on the map (snowstorms bring Ice types, and so on) ----------
+  const PKM_STORMS = [
+    { id: "snow", name: "snowstorm", icon: "🌨️", weather: "hail", kind: "Ice", pool: ["snorunt", "swinub", "snover", "vanillite", "cubchoo", "bergmite", "snom", "spheal", "sneasel", "delibird", "smoochum", "cryogonal", "glalie", "sealeo"] },
+    { id: "heat", name: "heatwave", icon: "🔥", weather: "sun", kind: "Fire", pool: ["vulpix", "growlithe", "ponyta", "magby", "slugma", "numel", "torkoal", "houndour", "litleo", "salandit", "sizzlipede", "litwick", "darumaka", "heatmor"] },
+    { id: "thunder", name: "thunderstorm", icon: "⛈️", weather: "rain", kind: "Electric", pool: ["pikachu", "magnemite", "voltorb", "elekid", "mareep", "electrike", "shinx", "blitzle", "tynamo", "joltik", "helioptile", "yamper", "pawmi", "pichu"] },
+    { id: "fog", name: "thick fog", icon: "🌫️", weather: null, kind: "Ghost and Psychic", pool: ["gastly", "misdreavus", "shuppet", "duskull", "drifloon", "phantump", "pumpkaboo", "sinistea", "abra", "natu", "ralts", "espurr", "hatenna", "litwick"] },
+    { id: "sand", name: "sandstorm", icon: "🏜️", weather: "sand", kind: "Ground and Rock", pool: ["sandshrew", "diglett", "geodude", "onix", "larvitar", "trapinch", "gible", "hippopotas", "drilbur", "sandile", "rolycoly", "silicobra", "nacli", "rhyhorn"] },
+  ];
+  /** The weather event in a region right now (changes every 4 hours, the same for everyone), or null. */
+  function pkmMapStorm(region) {
+    const f = GM_getValue("pkm_storm_force", "");
+    if (f) return PKM_STORMS.find((s) => s.id === f) || null;
+    const slot = Math.floor(Date.now() / (4 * 3600e3));
+    const r = pkmRng(pkmHash(`${region}:${slot}`, 7))();
+    return r < 0.3 ? PKM_STORMS[Math.floor((r / 0.3) * PKM_STORMS.length) % PKM_STORMS.length] : null;
+  }
+  {
+    const zw = pkmZoneWild;
+    pkmZoneWild = async function (z) {
+      const s = z && pkmMapStorm(z.region);
+      const sw = pkmSwarm();
+      // a swarm in this place wins over the weather event
+      if (s && z.theme !== "cave" && !(sw && sw.zone && sw.zone.id === z.id) && Math.random() < 0.35) {
+        const d = await pkmPokemonData(pkmPick(s.pool)).catch(() => null);
+        if (d) { const m = await pkmWildFrom(d, pkmClamp(pkmRand(z.lv[0], z.lv[1]) + pkmDiffOffset(), 2, MAX_LEVEL), {}); m.zone = z.id; m.storm = s.id; return m; }
+      }
+      return zw.apply(this, arguments);
+    };
+    const zwx = pkmZoneWeather;
+    pkmZoneWeather = function (zoneId) {
+      const z = pkmZoneById(zoneId);
+      const s = z && z.theme !== "cave" && pkmMapStorm(z.region);
+      if (s && s.weather) return s.weather;
+      return zwx.apply(this, arguments);
+    };
+    const oe = pkmOpenExplore;
+    pkmOpenExplore = function (zoneId) {
+      const r = oe.apply(this, arguments);
+      const z = pkmZoneById(zoneId);
+      const s = z && pkmMapStorm(z.region);
+      const P = pkmExplorePanel;
+      if (s && P && !P.querySelector(".mp-storm")) { const m = P.querySelector(".pkb-msg"); if (m) m.insertAdjacentHTML("afterend", `<div class="mp-storm">${s.icon} A ${pkmEsc(s.name)} is sweeping ${pkmEsc(pkmRegion(z.region).name)}! ${pkmEsc(s.kind)}-type Pokémon are out.</div>`); }
+      return r;
+    };
+    const om = pkmOpenMap;
+    pkmOpenMap = function () {
+      const r = om.apply(this, arguments);
+      const P = pkmMapPanel;
+      if (P && !P.querySelector(".mp-storms")) {
+        const list = PKM_REGIONS.filter((x, i) => pkmRegionOpen(i)).map((x) => [x, pkmMapStorm(x.id)]).filter(([, s]) => s);
+        if (list.length) P.querySelector(".pkm-set-head")?.insertAdjacentHTML("afterend", `<div class="mp-storms">${list.map(([x, s]) => `<span>${s.icon} ${pkmEsc(pkmCap(s.name))} in ${pkmEsc(x.name)}</span>`).join("")}</div>`);
+      }
+      return r;
+    };
+  }
+
+  // ---------- Habitat map (which Pokémon live where, and which you've caught) ----------
+  let pkmHabPanel = null;
+  let pkmHabRegion = "kanto";
+  function pkmCloseHabitats() { if (pkmHabPanel) pkmHabPanel.remove(); pkmHabPanel = null; }
+  function pkmOpenHabitats(region) {
+    if (typeof region === "string") pkmHabRegion = region;
+    if (!pkmHabPanel) pkmHabPanel = pkmMakePanel("pkm-hab", "Habitat map", (e) => {
+      const a = e.target.closest("[data-a]")?.dataset.a;
+      if (a === "close") return pkmCloseHabitats();
+      const r = e.target.closest("[data-hreg]");
+      if (r && !r.disabled) return pkmOpenHabitats(r.dataset.hreg);
+      const z = e.target.closest("[data-hzone]");
+      if (z && !z.disabled) { pkmCloseHabitats(); pkmOpenExplore(z.dataset.hzone); }
+    });
+    const dex = new Set((getArr(STORAGE.pokedex) || []).map((p) => String(p.name).toLowerCase()));
+    const zones = (PKM_ZONES[pkmHabRegion] || []).filter((z) => !z.event || z.event === (pkmCurrentEvent() || {}).id).map((z) => ({ ...z, region: pkmHabRegion }));
+    const all = new Set(zones.flatMap((z) => z.pool));
+    const have = [...all].filter((n) => dex.has(n)).length;
+    pkmHabPanel.innerHTML = `${pkmPanelHead("🗺️ Habitat map", "hb-head")}<div class="lk-body">
+      <div class="bag-tabs" role="tablist">${PKM_REGIONS.map((x, i) => `<button type="button" role="tab" data-hreg="${x.id}" aria-selected="${x.id === pkmHabRegion}" ${pkmRegionOpen(i) ? "" : "disabled"}>${x.icon} ${pkmEsc(x.name)}</button>`).join("")}</div>
+      <div class="pkm-dim">${have}/${all.size} of the Pokémon that live in ${pkmEsc(pkmRegion(pkmHabRegion).name)} are in your Pokédex. Gray ones are still to catch. Click a place to go there.</div>
+      <div class="hb-list">${zones.map((z) => { const got = z.pool.filter((n) => dex.has(n)).length; const open = pkmZoneOpen(z); return `<div class="hb-zone"><button type="button" class="hb-zh" data-hzone="${z.id}" ${open ? "" : "disabled"}><b>${z.icon} ${pkmEsc(z.name)}</b><span class="pkm-dim">Lv ${z.lv[0]}-${z.lv[1]} · ${got}/${z.pool.length}${open ? "" : " · 🔒"}</span></button>
+        <div class="hb-mons">${z.pool.map((n) => `<img src="https://play.pokemonshowdown.com/sprites/gen5/${pkmEsc(n)}.png" alt="${pkmEsc(pkmCap(n))}" title="${pkmEsc(pkmCap(n))}${dex.has(n) ? "" : " (not caught)"}" class="${dex.has(n) ? "" : "miss"}" loading="lazy">`).join("")}</div></div>`; }).join("")}</div></div>`;
+    pkmHabPanel.querySelectorAll(".hb-mons img").forEach((img) => { img.onerror = () => { img.style.visibility = "hidden"; }; });
+  }
+
+  // ---------- Your partner's mood while it walks with you ----------
+  function pkmPartnerMood() {
+    const id = GM_getValue("pkm_starter_id");
+    const s = (getObj(STORAGE.stats) || {})[id] || {};
+    const p = (getObj(STORAGE.party) || {})[id];
+    if (!p) return null;
+    const name = pkmCap(p.name);
+    const f = s.friendship == null ? 70 : s.friendship;
+    const st = activeStats();
+    const hp = st.currentHP != null ? st.currentHP : st.hp;
+    if (hp <= 0) return ["😵", `${name} fainted. Heal it at a Pokémon Center.`];
+    if (hp < st.hp * 0.3) return ["🤕", `${name} is hurt and needs a rest.`];
+    if (pkmIsNight() && f < 220) return ["😴", `${name} is getting sleepy.`];
+    if (f >= 220) return ["💖", `${name} loves walking with you!`];
+    if (f >= 150) return ["😊", `${name} is happy to be with you.`];
+    if (f >= 90) return ["🙂", `${name} seems content.`];
+    return ["😐", `${name} is still getting used to you. Try ⛺ Pokémon Camp!`];
+  }
+  let pkmMoodTick = 0;
+  function pkmShowMood(force) {
+    if (!spriteWrapperEl || document.hidden) return;
+    let el = spriteWrapperEl.querySelector(".pkm-mood");
+    if (!el) {
+      el = document.createElement("button");
+      el.type = "button";
+      el.className = "pkm-mood";
+      el.onclick = (e) => { e.stopPropagation(); const m = pkmPartnerMood(); if (m) pkmToast(`${m[0]} ${m[1]}`, 3500); };
+      spriteWrapperEl.appendChild(el);
+    }
+    const m = pkmPartnerMood();
+    if (!m) return;
+    el.textContent = m[0];
+    el.title = m[1];
+    el.setAttribute("aria-label", m[1]);
+    pkmMoodTick++;
+    if (force || pkmMoodTick % 2 === 0) { el.classList.add("show"); setTimeout(() => el.classList.remove("show"), 6000); }
+  }
+  setTimeout(() => pkmShowMood(true), 5000);
+  setInterval(() => pkmShowMood(false), 30000);
+
+  // ---------- Panels ----------
+  PKM_PANELS.push(["live", () => pkmLivePanel, () => pkmCloseLive()], ["hab", () => pkmHabPanel, () => pkmCloseHabitats()]);
+  pkmOpenHabitats = pkmExclusive("hab", pkmOpenHabitats);
+
+  pkmStyle(`
+    .pkm-set.pkm-live,.pkm-set.pkm-hab{width:min(680px,96vw);max-height:92vh;overflow:auto}
+    .lv-head{background:linear-gradient(90deg,#c0302a,#5a1010)!important}.hb-head{background:linear-gradient(90deg,#3a8a5a,#1a4a2e)!important}
+    .ol-badge{font-size:13px;margin-left:1px;cursor:help}
+    .lv-code{text-align:center;padding:14px}.lv-code b{display:block;font-size:34px;letter-spacing:.2em;margin:8px 0;font-family:ui-monospace,monospace}
+    .lb-table{width:100%;border-collapse:collapse;margin-top:6px;font-size:13px}.lb-table th,.lb-table td{padding:4px 6px;border-bottom:1px solid rgba(127,127,127,.15);text-align:left}
+    .lb-table tr.me{background:rgba(255,203,5,.15);font-weight:700}.lb-spr{width:32px;height:32px;vertical-align:middle;image-rendering:pixelated}
+    .ev-card{padding:10px;border-radius:12px;background:rgba(127,127,127,.1);margin:8px 0;display:grid;gap:5px}.ev-bar span{background:linear-gradient(90deg,#ff6a2a,#ffcb05)!important}
+    .fr-me{padding:8px;border-radius:10px;background:rgba(127,127,127,.1);margin-bottom:6px}.fr-me b{font-family:ui-monospace,monospace;font-size:16px}
+    .lvw-side{display:flex;gap:10px;align-items:center;margin:6px 0}.lvw-side img{width:72px;height:72px;image-rendering:pixelated}.lvw-side>div{flex:1}
+    .lvw-log{max-height:140px;overflow:auto;font-size:12.5px;background:rgba(127,127,127,.1);border-radius:8px;padding:6px 8px;margin:6px 0}
+    .lvw-end{text-align:center;font-size:18px;font-weight:700;padding:10px}
+    .sf-outbreak,.mp-storm{margin:4px 0;padding:5px 8px;border-radius:8px;background:rgba(255,160,40,.18);font-size:12.5px}
+    .mp-storms{display:flex;gap:8px;flex-wrap:wrap;padding:6px 10px;font-size:12.5px;background:rgba(80,140,255,.15)}
+    .hb-list{display:grid;gap:8px;margin-top:8px}.hb-zone{border-radius:12px;background:rgba(127,127,127,.1);padding:6px 8px}
+    .hb-zh{all:unset;cursor:pointer;display:flex;justify-content:space-between;width:100%;gap:8px}.hb-zh[disabled]{cursor:default;opacity:.7}
+    .hb-mons{display:flex;flex-wrap:wrap;gap:2px;margin-top:4px}.hb-mons img{width:40px;height:40px;image-rendering:pixelated}.hb-mons img.miss{filter:grayscale(1) brightness(.35);opacity:.7}
+    .pkm-mood{all:unset;cursor:pointer;position:absolute;left:50%;top:-26px;transform:translateX(-50%) scale(.6);font-size:20px;opacity:0;transition:opacity .3s,transform .3s;pointer-events:auto;
+      background:#fff;border-radius:999px;padding:1px 6px;box-shadow:0 2px 6px rgba(0,0,0,.3)}
+    .pkm-mood.show,.pkm-partner:hover .pkm-mood{opacity:1;transform:translateX(-50%) scale(1)}
+  `, "pkm-v43");
+  // =====================================================================
+  //  4.4: trade chat, guilds + guild raid, season pass, server-checked
+  //  Battle Tower, desktop alerts, public profile, National Dex across
+  //  browsers, sending Pokémon to a friend's Home, seasonal server places
+  //  (plus live-battle switching, spectators and ranked play in 14h)
+  // =====================================================================
+
+  // ---------- Trade chat (preset messages only) ----------
+  const PKM_CHAT = [
+    ["Hello everyone! 👋", ""], ["Looking for {x}!", "sp"], ["Offering {x} on the GTS.", "sp"], ["Anyone up for a live battle?", ""],
+    ["Join my guild! Tag: {x}", "tag"], ["Thanks for the trade! 🙏", ""], ["GG! 🎉", ""], ["Who wants to Wonder Trade?", ""],
+    ["The shared raid boss is almost down! ⚔️", ""], ["Just caught a shiny {x}! ✨", "sp"], ["Need help with our guild raid!", ""], ["Good luck, trainers! 🍀", ""],
+  ];
+  const pkmChatText = (c) => { const p = PKM_CHAT[c.msg]; if (!p) return "…"; const x = c.sp ? (p[1] === "tag" ? String(c.sp).toUpperCase() : pkmCap(c.sp)) : "?"; return p[0].replace("{x}", x); };
+  PKM_NEW_TABS.push(["chat", "💬 Chat"], ["guild", "🛡️ Guild"]);
+  Object.assign(pkmOnline2, { chat: [], chatLast: 0, reportFor: null, guild: undefined, guildTop: null, rating: null, dex: null, homeFriends: null, alertsAsked: false });
+  let pkmChatPoll = null;
+  {
+    const rf = pkmOnlineRefresh;
+    pkmOnlineRefresh = async function () {
+      const t = pkmOnlineTab;
+      if (!["chat", "guild", "live", "home", "friends"].includes(t) || !pkmOnline()) return rf.apply(this, arguments);
+      if (t === "live" || t === "friends") await rf.apply(this, arguments);
+      try {
+        if (t === "chat") {
+          const r = await pkmApi("chat_list", { since: 0 });
+          pkmOnline2.chat = r.chat;
+          pkmOnline2.chatLast = r.chat.length ? r.chat[r.chat.length - 1].id : 0;
+          if (!pkmChatPoll) pkmChatPoll = setInterval(() => { if (!pkmOnlinePanel || pkmOnlineTab !== "chat") { clearInterval(pkmChatPoll); pkmChatPoll = null; return; } pkmApi("chat_list", { since: 0 }).then((x) => { const last = x.chat.length ? x.chat[x.chat.length - 1].id : 0; if (last !== pkmOnline2.chatLast) { pkmOnline2.chat = x.chat; pkmOnline2.chatLast = last; pkmDrawOnline(); } }).catch(() => {}); }, 10000);
+        } else if (t === "guild") {
+          const [g, top] = await Promise.all([pkmApi("guild_info"), pkmApi("guild_top")]);
+          pkmOnline2.guild = g; pkmOnline2.guildTop = top;
+        } else if (t === "live") {
+          pkmOnline2.rating = (await pkmApi("rating_me")).rating;
+        } else if (t === "home") {
+          await rf.apply(this, arguments);
+          const [f, dx] = await Promise.all([pkmApi("friend_list"), pkmApi("dex_sync", { names: (getArr(STORAGE.pokedex) || []).map((p) => String(p.name).toLowerCase()) })]);
+          pkmOnline2.homeFriends = f.friends; pkmOnline2.dex = dx.names;
+        }
+      } catch (e) { pkmOnlineData.err = e.message; }
+    };
+    const body = pkmOnline2Body;
+    pkmOnline2Body = function () {
+      const t = pkmOnlineTab, o = pkmOnline2;
+      if (t === "chat") {
+        const opts = PKM_CHAT.map((p, i) => `<option value="${i}">${pkmEsc(p[0].replace("{x}", p[1] === "tag" ? "TAG" : "…"))}</option>`).join("");
+        return `<div class="pkm-dim">Chat with every trainer. To keep it friendly, you pick from set messages.</div>
+          <div class="ch-list">${o.chat.length ? o.chat.map((c) => `<div class="ch-msg${c.me ? " me" : ""}"><b>${pkmEsc(c.name)}</b>${pkmBadgeHtml(c.badges)} <span class="pkm-dim">${new Date(c.created * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
+              ${c.me ? "" : `<button type="button" class="ch-flag" data-flag="${c.pid}" title="Report this trainer">⚑</button>`}<div>${pkmEsc(pkmChatText(c))}</div>
+              ${o.reportFor === c.pid && !c.me ? `<div class="pkm-btns ch-report">Report for: ${[["cheating", "Cheating"], ["bad-name", "Bad name"], ["spam", "Spam"], ["scam", "Trade scam"]].map(([k, l]) => `<button type="button" class="pkm-btn2" data-rep="${k}" data-pid="${c.pid}">${l}</button>`).join("")}<button type="button" class="pkm-btn2" data-flag="0">Cancel</button></div>` : ""}</div>`).join("") : `<div class="pkm-dim">No messages yet. Say hello!</div>`}</div>
+          <div class="pkm-btns"><select class="ch-pick" aria-label="Message">${opts}</select><input class="ch-x" maxlength="30" placeholder="Pokémon or guild tag" aria-label="Pokémon or guild tag"><button type="button" class="pkm-btn2 primary" data-chat="send">Send</button></div>`;
+      }
+      if (t === "guild") {
+        const g = o.guild;
+        if (g === undefined) return `<div class="pkm-dim">Loading…</div>`;
+        const top = (o.guildTop && o.guildTop.top) || [];
+        const topHtml = `<div class="bag-sec"><span>🛡️ Top guilds this week</span></div><table class="lb-table"><tr><th>#</th><th>Guild</th><th>Raid damage</th></tr>${top.map((x) => `<tr class="${x.me ? "me" : ""}"><td>${x.rank}</td><td>[${pkmEsc(x.tag)}] ${pkmEsc(x.name)} <span class="pkm-dim">${x.members} members</span></td><td>${x.score.toLocaleString()}</td></tr>`).join("") || `<tr><td colspan="3" class="pkm-dim">No guilds yet.</td></tr>`}</table>`;
+        if (!g.guild) return `<div class="pkm-dim">Team up with other trainers. Guild members fight a weekly guild raid boss together, and guilds race on the weekly leaderboard.</div>
+          <div class="bag-sec"><span>Make a guild</span></div><div class="pkm-btns"><input class="gd-name" maxlength="16" placeholder="Guild name" aria-label="Guild name"><input class="gd-tag" maxlength="4" placeholder="TAG" aria-label="Guild tag (2-4 letters)" style="width:70px;text-transform:uppercase"><button type="button" class="pkm-btn2 primary" data-gd="create">Create</button></div>
+          <div class="bag-sec"><span>Join a guild</span></div><div class="pkm-btns"><input class="gd-join" maxlength="4" placeholder="TAG" aria-label="Guild tag" style="width:80px;text-transform:uppercase"><button type="button" class="pkm-btn2 primary" data-gd="join">Join</button></div>${topHtml}`;
+        const r = g.raid;
+        const pct = Math.min(100, Math.round((r.total / r.hp) * 100));
+        const down = r.total >= r.hp;
+        return `<div class="gd-head"><b>[${pkmEsc(g.guild.tag)}] ${pkmEsc(g.guild.name)}</b><span class="pkm-dim">${g.members.length} member${g.members.length === 1 ? "" : "s"}${g.guild.owner ? " · you lead it" : ""}</span><button type="button" class="pkm-btn2" data-gd="leave">Leave</button></div>
+          <div class="ev-card"><b>⚔️ Guild raid: ${pkmEsc(pkmCap(r.species))}</b><div class="pkm-dim">Your guild's damage adds up this week. You dealt ${r.mine.toLocaleString()}. Fights today: ${r.hitsToday}/3.</div>
+            <div class="bc-bar ev-bar"><span style="width:${pct}%"></span></div><div class="pkm-dim">${down ? "💥 Your guild beat the boss!" : `${r.total.toLocaleString()} / ${r.hp.toLocaleString()} HP (${pct}%)`}</div>
+            <div class="pkm-btns"><button type="button" class="pkm-btn2 primary" data-gd="fight" ${down || r.hitsToday >= 3 ? "disabled" : ""}>⚔️ Fight</button><button type="button" class="pkm-btn2" data-gd="claim" ${down && r.mine > 0 && !r.claimed ? "" : "disabled"}>${r.claimed ? "Prize collected ✓" : "Collect the prize"}</button></div></div>
+          <div class="bag-sec"><span>Members</span></div><table class="lb-table"><tr><th>Trainer</th><th>Damage this week</th></tr>${g.members.map((m) => `<tr><td>${m.owner ? "👑 " : ""}${pkmEsc(m.name)} ${pkmBadgeHtml(m.badges)}</td><td>${m.dmg.toLocaleString()}</td></tr>`).join("")}</table>${topHtml}`;
+      }
+      let html = body.apply(this, arguments);
+      if (t === "friends" && o.friends) {
+        const pub = GM_getValue("pkm_profile_public", "false") === "true";
+        const url = `${pkmServerUrl()}profile.php?c=${o.friends.code}`;
+        html += `<div class="bag-sec"><span>🪪 Public profile</span></div>
+          <div class="pkm-btns"><button type="button" class="pkm-btn2 ${pub ? "primary" : ""}" data-pf="toggle" aria-pressed="${pub}">${pub ? "✓ Public" : "Make my profile public"}</button>${pub ? `<input readonly class="pf-url" value="${pkmEsc(url)}" style="flex:1" aria-label="Profile link"><button type="button" class="pkm-btn2" data-pf="copy">📋</button>` : ""}</div>
+          <div class="pkm-dim">A public profile shows your name, trainer look, badges, a few totals and your party on a web page anyone with the link can open.</div>`;
+      }
+      return html;
+    };
+    const dr = pkmDrawOnline;
+    pkmDrawOnline = function () {
+      dr.apply(this, arguments);
+      const P = pkmOnlinePanel;
+      if (!P || !pkmOnline()) return;
+      const acct = P.querySelector(".ol-acct");
+      if (acct && !acct.querySelector("[data-push]")) {
+        const on = GM_getValue("pkm_push", "false") === "true";
+        acct.insertAdjacentHTML("beforeend", ` <button type="button" class="pkm-btn2 ${on ? "primary" : ""}" data-push="1" title="Desktop alerts for finished trades, Wonder Trades and gifts">🔔 ${on ? "Alerts on" : "Alerts off"}</button>`);
+      }
+      if (pkmOnlineTab === "home" && !P.querySelector(".hm-extra")) {
+        const body = P.querySelector(".lk-body");
+        for (const r of (pkmOnlineData.home && pkmOnlineData.home.home) || []) { if (!r.from) continue; const tile = P.querySelector(`[data-out="${r.id}"]`)?.closest(".ol-tile"); if (tile) tile.insertAdjacentHTML("beforeend", `<span class="pkm-dim">From ${pkmEsc(r.from)}</span>`); }
+        const fr = pkmOnline2.homeFriends || [];
+        const dex = pkmOnline2.dex;
+        const local = new Set((getArr(STORAGE.pokedex) || []).map((p) => String(p.name).toLowerCase()));
+        const other = (dex || []).filter((n) => !local.has(n));
+        body && body.insertAdjacentHTML("beforeend", `<div class="hm-extra">
+          <div class="bag-sec"><span>🎁 Send to a friend's Home</span></div>
+          ${fr.length ? `<div class="pkm-btns"><select class="hm-give" aria-label="Pokémon to send">${pkmSendOptions()}</select><select class="hm-to" aria-label="Friend">${fr.map((f) => `<option value="${f.pid}">${pkmEsc(f.name)}</option>`).join("")}</select><button type="button" class="pkm-btn2 primary" data-hm="send">Send</button></div>` : `<div class="pkm-dim">Add friends in 👥 Friends to send them Pokémon.</div>`}
+          <div class="bag-sec"><span>📕 National Dex (all your browsers)</span><span class="pkm-dim">${dex ? dex.length : "…"}</span></div>
+          ${dex ? `<div class="pkm-dim">${dex.length} species registered across every browser that uses this account. ${other.length} of them are only in another browser's Pokédex:</div>
+            <div class="hb-mons">${other.slice(0, 120).map((n) => `<img src="https://play.pokemonshowdown.com/sprites/gen5/${pkmEsc(n)}.png" alt="${pkmEsc(pkmCap(n))}" title="${pkmEsc(pkmCap(n))}" loading="lazy">`).join("") || `<span class="pkm-dim">None. This browser has them all.</span>`}</div>` : ""}</div>`);
+        body && body.querySelectorAll(".hm-extra img").forEach((img) => { img.onerror = () => { img.style.visibility = "hidden"; }; });
+      }
+    };
+    const ck = pkmOnline2Click;
+    pkmOnline2Click = async function (e) {
+      const P = pkmOnlinePanel;
+      const g = (k) => e.target.closest(`[${k}]`);
+      if (g("data-push")) return pkmTogglePush();
+      if (g("data-flag")) { pkmOnline2.reportFor = +g("data-flag").dataset.flag || null; return pkmDrawOnline(); }
+      if (g("data-rep")) return pkmOnlineDo(async () => { await pkmApi("report", { target: +g("data-rep").dataset.pid, reason: g("data-rep").dataset.rep }); pkmOnline2.reportFor = null; pkmToast("Thanks. The report was sent to the server admin."); });
+      if (g("data-chat")) return pkmOnlineDo(async () => {
+        const msg = +P.querySelector(".ch-pick").value;
+        const x = P.querySelector(".ch-x").value.trim().toLowerCase().replace(/\s+/g, "-");
+        if (PKM_CHAT[msg][1] && !x) throw new Error(PKM_CHAT[msg][1] === "tag" ? "Type your guild tag." : "Type a Pokémon name.");
+        await pkmApi("chat_post", { msg, sp: PKM_CHAT[msg][1] ? x : "" });
+        await pkmOnlineRefresh();
+      });
+      const gd = g("data-gd")?.dataset.gd;
+      if (gd === "create") return pkmOnlineDo(async () => { const r = await pkmApi("guild_create", { name: P.querySelector(".gd-name").value, tag: P.querySelector(".gd-tag").value }); pkmToast(`🛡️ Guild [${r.tag}] ${r.name} is ready. Share the tag so friends can join!`, 5000); await pkmOnlineRefresh(); });
+      if (gd === "join") return pkmOnlineDo(async () => { const r = await pkmApi("guild_join", { tag: P.querySelector(".gd-join").value }); pkmToast(`🛡️ You joined [${r.tag}] ${r.name}!`); await pkmOnlineRefresh(); });
+      if (gd === "leave") { if (!confirm("Leave your guild?")) return; return pkmOnlineDo(async () => { await pkmApi("guild_leave"); await pkmOnlineRefresh(); }); }
+      if (gd === "claim") return pkmOnlineDo(async () => { const r = await pkmApi("guild_raid_claim"); pkmToast(`🛡️ Guild raid prize: ${pkmApplyServerReward(r.coins, r.items)}!`, 5000); await pkmOnlineRefresh(); });
+      if (gd === "fight") { const r = pkmOnline2.guild.raid; return pkmGlobalRaidFight({ id: r.id, species: r.species, level: r.level }, "guild"); }
+      const pf = g("data-pf")?.dataset.pf;
+      if (pf === "toggle") return pkmOnlineDo(async () => { const on = GM_getValue("pkm_profile_public", "false") !== "true"; GM_setValue("pkm_profile_public", on ? "true" : "false"); await pkmSyncPublicProfile(true); });
+      if (pf === "copy") { const i = P.querySelector(".pf-url"); navigator.clipboard?.writeText(i.value).then(() => pkmToast("Profile link copied.")); return; }
+      if (g("data-hm")) return pkmOnlineDo(async () => {
+        const id = P.querySelector(".hm-give").value, to = +P.querySelector(".hm-to").value;
+        const p = pkmPackForSend(id);
+        if (p.err) throw new Error(p.err);
+        await pkmApi("home_send", { to, mon: p.mon });
+        pkmRemoveMon(id);
+        pkmToast(`🎁 ${pkmCap(p.mon.s)} is on its way to your friend's Home box.`);
+        await pkmOnlineRefresh();
+      });
+      return ck.apply(this, arguments);
+    };
+  }
+
+  // ---------- Public profile ----------
+  async function pkmSyncPublicProfile(force) {
+    if (!pkmOnline()) return;
+    const pub = GM_getValue("pkm_profile_public", "false") === "true";
+    const day = pkmDay(0);
+    if (!force && (!pub || GM_getValue("pkm_profile_synced", "") === day)) return;
+    const L = pkmLook();
+    const pv = pkmProgressView();
+    const r = await pkmApi("profile_full", {
+      public: pub, team: pkmLiveTeam(), look: { sprite: L.sprite, color: L.color, title: L.title }, bg: +GM_getValue("pkm_profile_bg", 0) || 0, favs: pkmProfileFavs(),
+      stats: { dex: pv._dex, badges: pv._badges, champs: Object.keys(pkmJSON("pkm_champs", {}) || {}).length, tower: pkmTower().best || 0, shinies: Object.keys(pkmJSON("pkm_species_shiny", {})).length, caught: pv.caught || 0 },
+    });
+    GM_setValue("pkm_profile_synced", day);
+    if (force) pkmToast(pub ? "🪪 Your profile is public now." : "🪪 Your profile is private now.");
+    return r;
+  }
+  setTimeout(() => pkmSyncPublicProfile(false).catch(() => {}), 12000);
+
+  // ---------- Desktop alerts ----------
+  async function pkmTogglePush() {
+    const on = GM_getValue("pkm_push", "false") === "true";
+    if (on) { GM_setValue("pkm_push", "false"); pkmToast("🔕 Desktop alerts are off."); return pkmDrawOnline(); }
+    let perm = typeof Notification === "function" ? Notification.permission : "denied";
+    if (perm === "default") perm = await Notification.requestPermission().catch(() => "denied");
+    GM_setValue("pkm_push", "true");
+    pkmToast(perm === "granted" ? "🔔 Desktop alerts are on." : "🔔 Alerts are on, but your browser blocked desktop pop-ups, so they'll show in the game instead.", 5000);
+    pkmDrawOnline();
+    pkmPushCheck(true);
+  }
+  function pkmPushNotify(title, body, tab) {
+    try {
+      if (typeof Notification === "function" && Notification.permission === "granted" && document.hidden) {
+        const n = new Notification(title, { body, tag: `pkm-${tab}`, icon: `${PKM_ITEM_IMG}poke-ball.png` });
+        n.onclick = () => { window.focus(); pkmOpenOnline(tab); n.close(); };
+        return;
+      }
+    } catch {}
+    pkmToast(`${title} ${body}`, 6000);
+  }
+  /** Looks for finished trades, Wonder Trades and gifts and tells the player about new ones. */
+  async function pkmPushCheck(silent) {
+    if (GM_getValue("pkm_push", "false") !== "true" || !pkmOnline()) return;
+    try {
+      const [t, w, gft] = await Promise.all([pkmApi("trade_mine"), pkmApi("wonder_mine"), pkmApi("fgift_inbox")]);
+      const seen = new Set(pkmJSON("pkm_push_seen", []));
+      const fresh = [
+        ...t.trades.filter((x) => x.status === "done").map((x) => [`t${x.id}`, "🔄 GTS trade finished!", `${x.taker || "A trainer"} traded you ${pkmShareLabel(x.got || { s: "?", l: 1 })}.`, "gts"]),
+        ...w.wonder.filter((x) => x.matched).map((x) => [`w${x.id}`, "🎲 Wonder Trade done!", `${x.from || "A trainer"} sent you ${pkmShareLabel(x.got || { s: "?", l: 1 })}.`, "wonder"]),
+        ...gft.gifts.map((x) => [`g${x.id}`, "🎁 New gift!", `${x.from} sent you a gift.`, "friends"]),
+      ].filter(([k]) => !seen.has(k));
+      fresh.forEach(([k]) => seen.add(k));
+      pkmSave("pkm_push_seen", [...seen].slice(-300));
+      if (!silent) fresh.slice(0, 3).forEach(([, a, b, tab]) => pkmPushNotify(a, b, tab));
+    } catch {}
+  }
+  setInterval(() => pkmPushCheck(false), 120000);
+
+  // ---------- Server-checked Battle Tower (same foes for everyone on a run seed) ----------
+  {
+    const ts = pkmTowerStart;
+    pkmTowerStart = async function () {
+      GM_deleteValue("pkm_tower_run");
+      if (pkmOnline()) {
+        try {
+          const r = await Promise.race([pkmApi("tower_start"), new Promise((_, rej) => setTimeout(() => rej(new Error("slow")), 5000))]);
+          pkmSave("pkm_tower_run", { run: r.run, seed: r.seed });
+          pkmToast("🗼 This run is checked by the server, so it counts for the online leaderboard.", 3500);
+        } catch {}
+      }
+      return ts.apply(this, arguments);
+    };
+    const tt = pkmTowerTrainer;
+    pkmTowerTrainer = function (streak) {
+      const run = pkmJSON("pkm_tower_run", null);
+      if (!run) return tt.apply(this, arguments);
+      const rnd = Math.random;
+      Math.random = pkmRng(((run.seed >>> 0) + streak * 7919) >>> 0);
+      try { return tt.apply(this, arguments); } finally { Math.random = rnd; }
+    };
+    const tw = pkmTowerWin;
+    pkmTowerWin = function (b) {
+      const r = tw.apply(this, arguments);
+      const run = pkmJSON("pkm_tower_run", null);
+      if (run && b && b.trainer) pkmApi("tower_win", { run: run.run, streak: b.trainer.streak }).catch((e) => console.warn("[Tower]", e.message));
+      return r;
+    };
+    const tl = pkmTowerLose;
+    pkmTowerLose = function () {
+      const run = pkmJSON("pkm_tower_run", null);
+      if (run) { pkmApi("tower_end", { run: run.run }).catch(() => {}); GM_deleteValue("pkm_tower_run"); }
+      return tl.apply(this, arguments);
+    };
+  }
+
+  // ---------- Season pass (weekly missions -> season points -> tier rewards and outfits) ----------
+  const PKM_SEASON_MISSIONS = [
+    ["wins", 15, "Win 15 battles"], ["caught", 10, "Catch 10 Pokémon"], ["trainerWins", 8, "Beat 8 trainers"], ["evolutions", 2, "Evolve 2 Pokémon"],
+    ["hatched", 1, "Hatch an Egg"], ["campCare", 8, "Care for Pokémon at Camp 8 times"], ["walks", 30, "Walk 30 steps on the map"], ["raids", 1, "Clear a raid"],
+    ["quests", 5, "Finish 5 daily quests"], ["safariCaught", 3, "Catch 3 Pokémon in the Safari Zone"], ["contests", 1, "Enter a Contest"], ["trades", 1, "Make a trade"],
+    ["towerWins", 5, "Win 5 Battle Tower battles"], ["villainWins", 1, "Beat a villain team battle"], ["frontierWins", 3, "Win 3 Frontier battles"],
+  ];
+  const PKM_SEASON_OUTFITS = [["giovanni", "Giovanni"], ["cyrus", "Cyrus"], ["lysandre", "Lysandre"], ["guzma", "Guzma"], ["rose", "Chairman Rose"], ["plumeria", "Plumeria"],
+    ["mars", "Mars"], ["courtney", "Courtney"], ["archer", "Archer"], ["ghetsis", "Ghetsis"], ["colress", "Colress"], ["oleana", "Oleana"]];
+  const PKM_SEASON_TIERS = 20, PKM_SEASON_STEP = 150;
+  const pkmSeasonId = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`; };
+  const pkmSeason = () => { const s = pkmJSON("pkm_season", {}); return s.id === pkmSeasonId() ? s : { id: pkmSeasonId(), sp: 0, tiers: [], done: {} }; };
+  function pkmSeasonMissions() {
+    const w = pkmWeekId();
+    const rng = pkmRng(pkmHash(`season:${w}`, 3));
+    const pool = PKM_SEASON_MISSIONS.slice();
+    const out = [];
+    while (out.length < 5 && pool.length) out.push(pool.splice(Math.floor(rng() * pool.length), 1)[0]);
+    return { week: w, list: out };
+  }
+  /** The two outfits this month's pass gives (tiers 10 and 20). */
+  function pkmSeasonOutfits() {
+    const m = new Date().getMonth();
+    return [PKM_SEASON_OUTFITS[(m * 2) % PKM_SEASON_OUTFITS.length], PKM_SEASON_OUTFITS[(m * 2 + 1) % PKM_SEASON_OUTFITS.length]];
+  }
+  function pkmSeasonReward(tier) {
+    const [o1, o2] = pkmSeasonOutfits();
+    if (tier === 10) return { outfit: o1, label: `🧢 ${o1[1]} outfit` };
+    if (tier === 20) return { outfit: o2, label: `🧢 ${o2[1]} outfit` };
+    const cycle = [
+      { coins: 800, label: "💰 800 coins" }, { items: [[STORAGE.greatBalls, 5, "Great Balls"]], label: "⚪ 5 Great Balls" }, { items: [["pkm_item_rare-candy", 1, "Rare Candy"]], label: "🍬 Rare Candy" },
+      { items: [[STORAGE.ultraBalls, 3, "Ultra Balls"]], label: "🟡 3 Ultra Balls" }, { coins: 1500, label: "💰 1500 coins" }, { items: [["pkm_item_ability-capsule", 1, "Ability Capsule"]], label: "💊 Ability Capsule" },
+      { items: [["pkm_revive", 2, "Revives"]], label: "✨ 2 Revives" }, { items: [["pkm_item_nature-mint", 1, "Nature Mint"]], label: "🌿 Nature Mint" }, { items: [[STORAGE.masterBalls, 1, "Master Ball"]], label: "🟣 Master Ball" },
+    ];
+    return cycle[(tier - 1) % cycle.length];
+  }
+  function pkmUnlockedOutfits() { return pkmJSON("pkm_outfits", []); }
+  function pkmAddOutfitLooks() { for (const s of pkmUnlockedOutfits()) if (!PKM_LOOKS.includes(s)) PKM_LOOKS.push(s); }
+  pkmAddOutfitLooks();
+  let pkmSeasonPanel = null;
+  function pkmCloseSeason() { if (pkmSeasonPanel) pkmSeasonPanel.remove(); pkmSeasonPanel = null; }
+  function pkmOpenSeason() {
+    if (!pkmSeasonPanel) pkmSeasonPanel = pkmMakePanel("pkm-season", "Season pass", (e) => {
+      const a = e.target.closest("[data-a]")?.dataset.a;
+      if (a === "close") return pkmCloseSeason();
+      const m = e.target.closest("[data-sm]");
+      if (m && !m.disabled) {
+        const s = pkmSeason();
+        const { week } = pkmSeasonMissions();
+        const key = `${week}:${m.dataset.sm}`;
+        if (s.done[key]) return;
+        s.done[key] = 1; s.sp += 100;
+        pkmSave("pkm_season", s);
+        pkmToast("🎟️ +100 season points!");
+        return pkmOpenSeason();
+      }
+      const t = e.target.closest("[data-st]");
+      if (t && !t.disabled) {
+        const tier = +t.dataset.st;
+        const s = pkmSeason();
+        if (s.tiers.includes(tier) || s.sp < tier * PKM_SEASON_STEP) return;
+        const r = pkmSeasonReward(tier);
+        if (r.coins) setInt(STORAGE.coins, getInt(STORAGE.coins) + r.coins);
+        if (r.items) pkmGive(r.items);
+        if (r.outfit) { const o = pkmUnlockedOutfits(); if (!o.includes(r.outfit[0])) o.push(r.outfit[0]); pkmSave("pkm_outfits", o); pkmAddOutfitLooks(); }
+        s.tiers.push(tier);
+        pkmSave("pkm_season", s);
+        playSound("evolve");
+        pkmToast(`🎟️ Tier ${tier}: ${r.label}!${r.outfit ? " Wear it in 🧢 Trainer look." : ""}`, 4500);
+        return pkmOpenSeason();
+      }
+    });
+    const s = pkmSeason();
+    const w = pkmWeek();
+    const { week, list } = pkmSeasonMissions();
+    const tier = Math.floor(s.sp / PKM_SEASON_STEP);
+    const into = s.sp % PKM_SEASON_STEP;
+    const daysLeft = Math.ceil((new Date(new Date().getFullYear(), new Date().getMonth() + 1, 1) - new Date()) / 864e5);
+    pkmSeasonPanel.innerHTML = `${pkmPanelHead("🎟️ Season pass", "ss-head")}<div class="lk-body">
+      <div class="ss-top"><div><b>Season ${pkmEsc(s.id)}</b><div class="pkm-dim">${daysLeft} day${daysLeft === 1 ? "" : "s"} left · ${s.sp} points · tier ${Math.min(tier, PKM_SEASON_TIERS)}/${PKM_SEASON_TIERS}</div></div>
+        <div class="ss-bar"><span style="width:${tier >= PKM_SEASON_TIERS ? 100 : Math.round((into / PKM_SEASON_STEP) * 100)}%"></span></div></div>
+      <div class="bag-sec"><span>This week's missions</span><span class="pkm-dim">new every Monday</span></div>
+      ${list.map(([k, n, label], i) => { const have = Math.min(n, w[k] || 0); const done = !!s.done[`${week}:${i}`]; return `<div class="ss-mis${done ? " done" : ""}"><div><b>${pkmEsc(label)}</b><div class="bc-bar"><span style="width:${Math.round((have / n) * 100)}%"></span></div></div><span class="pkm-dim">${have}/${n}</span>
+        <button type="button" class="pkm-btn2 ${have >= n && !done ? "primary" : ""}" data-sm="${i}" ${have >= n && !done ? "" : "disabled"}>${done ? "✓ +100" : "+100"}</button></div>`; }).join("")}
+      <div class="bag-sec"><span>Rewards</span><span class="pkm-dim">every ${PKM_SEASON_STEP} points</span></div>
+      <div class="ss-tiers">${Array.from({ length: PKM_SEASON_TIERS }, (_, i) => i + 1).map((t) => { const r = pkmSeasonReward(t); const got = s.tiers.includes(t); const can = !got && s.sp >= t * PKM_SEASON_STEP; return `<button type="button" class="ss-tier${got ? " got" : can ? " can" : ""}${r.outfit ? " big" : ""}" data-st="${t}" ${can ? "" : "disabled"} title="${pkmEsc(r.label)}">
+        ${r.outfit ? `<img src="${PKM_TRAINER_IMG}${pkmEsc(r.outfit[0])}.png" alt="">` : ""}<b>${t}</b><span>${pkmEsc(r.label)}</span>${got ? "<i>✓</i>" : ""}</button>`; }).join("")}</div></div>`;
+  }
+
+  // ---------- Seasonal server places (admin events with costume Pokémon) ----------
+  function pkmServerSeason() {
+    const c = pkmJSON("pkm_srv_events", null);
+    const s = c && c.d && c.d.season;
+    return s && s.pool && (!s.ends || s.ends * 1000 > Date.now()) ? s : null;
+  }
+  function pkmAddSeasonPlace() {
+    const s = pkmServerSeason();
+    const at = PKM_ZONES.kanto.findIndex((z) => z.id === "srv-season");
+    if (at >= 0) PKM_ZONES.kanto.splice(at, 1);
+    if (!s) return;
+    const pool = s.pool.map((n) => pkmSafeSlug(String(n))).filter(Boolean).slice(0, 30);
+    if (!pool.length) return;
+    const lv = Array.isArray(s.lv) ? [pkmClamp(+s.lv[0] || 5, 1, MAX_LEVEL), pkmClamp(+s.lv[1] || 40, 1, MAX_LEVEL)] : [10, 40];
+    PKM_ZONES.kanto.push({ ...pkmZ("srv-season", pkmSafeName(s.place, 30) || "Event Grove", String(s.icon || "🎉").slice(0, 4), lv, 0, "grass", pool), srvSeason: true, costume: String(s.costume || "🎀").slice(0, 4), eventTitle: s.title });
+  }
+  pkmAddSeasonPlace();
+  {
+    const rf = pkmOnlineRefresh;
+    pkmOnlineRefresh = async function () {
+      const r = await rf.apply(this, arguments);
+      if (pkmOnlineTab === "events") pkmAddSeasonPlace();
+      return r;
+    };
+    const zw = pkmZoneWild;
+    pkmZoneWild = async function (z) {
+      const m = await zw.apply(this, arguments);
+      if (m && z && z.srvSeason && Math.random() < 0.6) m.costume = z.costume;
+      return m;
+    };
+    const body = pkmOnline2Body;
+    pkmOnline2Body = function () {
+      let html = body.apply(this, arguments);
+      const s = pkmOnlineTab === "events" && pkmServerSeason();
+      if (s) html += `<div class="ev-card"><b>${pkmEsc(String(s.icon || "🎉"))} ${pkmEsc(s.title || "Seasonal event")}</b><div class="pkm-dim">${pkmEsc(s.place || "A new place")} is open in Kanto for a limited time. Pokémon there can wear a ${pkmEsc(String(s.costume || "🎀"))} costume.</div><button type="button" class="pkm-btn2 primary" data-ev2="season">Go there</button></div>`;
+      return html;
+    };
+    const ck = pkmOnline2Click;
+    pkmOnline2Click = async function (e) {
+      if (e.target.closest("[data-ev2='season']")) { pkmCloseOnline(); return pkmOpenExplore("srv-season"); }
+      return ck.apply(this, arguments);
+    };
+  }
+
+  // ---------- Panels ----------
+  PKM_PANELS.push(["season", () => pkmSeasonPanel, () => pkmCloseSeason()]);
+  pkmOpenSeason = pkmExclusive("season", pkmOpenSeason);
+
+  pkmStyle(`
+    .pkm-set.pkm-season{width:min(680px,96vw);max-height:92vh;overflow:auto}
+    .ss-head{background:linear-gradient(90deg,#e0a020,#a0502a)!important}
+    .ss-top{display:grid;gap:6px;padding:8px;border-radius:12px;background:rgba(224,160,32,.12)}
+    .ss-bar{height:10px;border-radius:999px;background:rgba(127,127,127,.25);overflow:hidden}.ss-bar span{display:block;height:100%;background:linear-gradient(90deg,#ffcb05,#ff7a1a)}
+    .ss-mis{display:grid;grid-template-columns:1fr auto auto;gap:8px;align-items:center;padding:6px 0;border-bottom:1px solid rgba(127,127,127,.15)}.ss-mis.done{opacity:.6}
+    .ss-tiers{display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:6px}
+    .ss-tier{all:unset;position:relative;display:grid;gap:2px;justify-items:center;text-align:center;padding:8px 4px;border-radius:12px;background:rgba(127,127,127,.12);font-size:11.5px}
+    .ss-tier b{font-size:16px}.ss-tier.can{cursor:pointer;outline:2px solid #ffcb05;background:rgba(255,203,5,.16)}.ss-tier.got{opacity:.55}.ss-tier.big img{width:54px;height:54px;image-rendering:pixelated}
+    .ss-tier i{position:absolute;right:6px;top:4px;font-style:normal;color:#2fbf71;font-weight:800}
+    .ch-list{display:grid;gap:4px;max-height:320px;overflow:auto;margin:6px 0;padding:6px;border-radius:10px;background:rgba(127,127,127,.08)}
+    .ch-msg{position:relative;padding:5px 8px;border-radius:10px;background:rgba(127,127,127,.12);font-size:13px}.ch-msg.me{background:rgba(31,143,224,.16)}
+    .ch-flag{all:unset;cursor:pointer;position:absolute;right:8px;top:4px;opacity:.5}.ch-flag:hover{opacity:1}.ch-report{margin-top:4px;font-size:12px}
+    .gd-head{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:8px;border-radius:12px;background:rgba(127,127,127,.1)}.gd-head .pkm-btn2{margin-left:auto}
+    .lvw-bench{flex-wrap:wrap}.lvw-bench .pkm-btn2{display:inline-flex;align-items:center;gap:4px}
+  `, "pkm-v44");
+  // =====================================================================
+  //  4.5: rotation foes rotate, catch the last horde Pokémon, ranked quick
+  //  match + best of 3, guild chat / shop / ranks, season bonus track and
+  //  season ranking, GTS wish list + offers you can fill + trade history,
+  //  server-checked Frontier, profile background / favorites / likes,
+  //  community catch goal with an event Pokémon
+  // =====================================================================
+
+  // ---------- Rotation: the foe rotates too ----------
+  /** Best damage multiplier the attacker has against the defender (0 if no attacking moves). */
+  const pkmBestEff = (att, def) => Math.max(0, ...(att.moves || []).filter((m) => m.cls !== "status" && m.pp > 0).map((m) => pkmMoveEff(att, def, m)));
+  async function pkmFoeRotate(b) {
+    const pool = b.team.slice(0, 3).filter((m) => m && m.hp > 0 && m !== b.foe);
+    if (!pool.length) return false;
+    const danger = pkmBestEff(b.me, b.foe) >= 2 || b.foe.hp < b.foe.maxHP * 0.3;
+    if (!danger || Math.random() < 0.4) return false;
+    const pick = pool.sort((x, y) => pkmBestEff(b.me, x) - pkmBestEff(b.me, y) || y.hp / y.maxHP - x.hp / x.maxHP)[0];
+    if (pkmBestEff(b.me, pick) > pkmBestEff(b.me, b.foe) && pick.hp >= b.foe.hp) return false;
+    const old = b.foe;
+    b.foe = pick;
+    b.foeIdx = b.team.indexOf(pick);
+    if (b.shown) b.shown.foe = null;
+    pkmSyncGlobals(b);
+    await pkmSay(b, `${b.trainer.name} rotated ${old.display} out for ${pick.display}!`, 900);
+    return true;
+  }
+  {
+    const tn = pkmTurn;
+    pkmTurn = async function (myAction) {
+      const b = pkb;
+      if (b && b.trainer && b.trainer.rotation && !b.double && !b.trainer.live && myAction && myAction.type === "move" && !b.busy && !b.awaitSwitch && !b.awaitRevive && pkmAlive(b) && !b.foe.charging) {
+        b.busy = true;
+        try { await pkmFoeRotate(b); } finally { b.busy = false; }
+        if (!pkmAlive(b)) return;
+      }
+      return tn.apply(this, arguments);
+    };
+  }
+
+  // ---------- Hordes: when one Pokémon is left, the battle becomes a normal one so you can catch it ----------
+  {
+    const db = drawBattle;
+    let converting = false;
+    drawBattle = function () {
+      const b = pkb;
+      if (b && b.horde && b.double && !b.busy && !b.over && !converting && b.kind === "wild" && b.foeNext >= (b.team || []).length) {
+        const alive = b.foes.filter((f) => f && f.hp > 0);
+        const me = b.mine.find((m) => m && m.hp > 0);
+        if (alive.length === 1 && me && !(b.dbl && b.dbl.refill && b.dbl.refill.length)) {
+          converting = true;
+          b.double = false; b.horde = false; b.hordeDone = true;
+          b.me = me; b.foe = alive[0];
+          delete b.team; b.foeIdx = 0; b.dbl = null;
+          if (b.shown) { b.shown.me = null; b.shown.foe = null; }
+          pkmSyncGlobals(b);
+          converting = false;
+          setTimeout(() => pkmToast(`Only one ${b.foe.display} is left. You can throw a ball now!`, 3500), 50);
+          return db.call(this, `Only ${b.foe.display} is left! What will ${b.me.display} do?`);
+        }
+      }
+      return db.apply(this, arguments);
+    };
+  }
+
+  // ---------- Quick match (ranked) ----------
+  let pkmQueuePoll = null;
+  const pkmQueueStop = () => { if (pkmQueuePoll) clearInterval(pkmQueuePoll); pkmQueuePoll = null; pkmOnline2.queue = null; };
+  async function pkmQueueJoin() {
+    const team = pkmLiveTeam();
+    if (!team.length) throw new Error("You need a party first.");
+    await pkmOnlineLogin();
+    const r = await pkmApi("queue_join", { team });
+    if (r.matched) { pkmQueueStop(); pkmCloseOnline(); pkmToast(`⚡ Matched with ${r.host}!`, 3000); return pkmOpenLive(r.id, r.host); }
+    pkmOnline2.queue = { since: Date.now(), waiting: r.waiting };
+    if (pkmQueuePoll) clearInterval(pkmQueuePoll);
+    pkmQueuePoll = setInterval(async () => {
+      try {
+        const s = await pkmApi("queue_status");
+        if (s.matched && s.role === "host") {
+          pkmQueueStop();
+          const x = await pkmApi("live_get", { id: s.id });
+          pkmToast(`⚡ Matched with ${x.guest}!`, 3000);
+          return pkmLiveStart(x);
+        }
+        if (!s.queued || Date.now() - (pkmOnline2.queue || {}).since > 180000) { pkmQueueStop(); pkmApi("queue_leave").catch(() => {}); pkmToast("Nobody was found for a quick match. Try again soon."); }
+        else if (pkmOnline2.queue) pkmOnline2.queue.waiting = s.waiting;
+        if (pkmOnlinePanel && pkmOnlineTab === "live") pkmDrawOnline();
+      } catch {}
+    }, 3000);
+  }
+
+  // ---------- Guild chat extras ----------
+  const PKM_GCHAT = PKM_CHAT.concat([["Raid time! Everyone fight the guild boss ⚔️", ""], ["Welcome to the guild! 👋", ""], ["Thanks for the help!", ""], ["Saving guild points for {x}.", "sp"]]);
+  const pkmGChatText = (c) => { const p = PKM_GCHAT[c.msg]; if (!p) return "…"; return p[0].replace("{x}", c.sp ? (p[1] === "tag" ? String(c.sp).toUpperCase() : pkmCap(c.sp)) : "?"); };
+  const PKM_ROLE_ICON = { leader: "👑", officer: "⭐", member: "" };
+
+  // ---------- GTS wish list ----------
+  const pkmWishList = () => pkmJSON("pkm_wishlist", []);
+  const pkmOwnedSpecies = () => [...new Set(Object.values(getObj(STORAGE.party) || {}).map((p) => String(p.name).toLowerCase()))];
+  PKM_NEW_TABS.push(["history", "🧾 History"]);
+  Object.assign(pkmOnline2, { queue: null, gchat: [], gme: null, match: null, history: null, community: null, seasonTop: null });
+
+  // ---------- Online panel: data ----------
+  {
+    const rf = pkmOnlineRefresh;
+    pkmOnlineRefresh = async function () {
+      const t = pkmOnlineTab;
+      if (["guild", "gts", "history", "events"].includes(t) && t !== "history") await rf.apply(this, arguments);
+      if (t !== "guild" && t !== "gts" && t !== "history" && t !== "events") return rf.apply(this, arguments);
+      if (!pkmOnline()) return;
+      try {
+        if (t === "guild" && pkmOnline2.guild && pkmOnline2.guild.guild) {
+          const [c, me] = await Promise.all([pkmApi("guild_chat_list"), pkmApi("guild_me")]);
+          pkmOnline2.gchat = c.chat; pkmOnline2.gme = me;
+        } else if (t === "gts") {
+          pkmOnline2.match = await pkmApi("trade_match", { have: pkmOwnedSpecies(), wish: pkmWishList() });
+        } else if (t === "history") {
+          pkmOnline2.history = (await pkmApi("trade_history")).history;
+        } else if (t === "events") {
+          pkmOnline2.community = (await pkmApi("community")).community;
+          pkmSave("pkm_srv_community", { id: pkmOnline2.community.id, species: pkmOnline2.community.species, ends: pkmOnline2.community.ends });
+        }
+      } catch (e) { pkmOnlineData.err = e.message; }
+    };
+  }
+
+  // ---------- Online panel: views ----------
+  {
+    const body = pkmOnline2Body;
+    pkmOnline2Body = function () {
+      const t = pkmOnlineTab, o = pkmOnline2;
+      if (t === "history") {
+        const h = o.history;
+        if (!h) return `<div class="pkm-dim">Loading…</div>`;
+        return h.length ? `<table class="lb-table"><tr><th>When</th><th>Type</th><th>You gave</th><th>You got</th><th>With</th></tr>${h.map((x) => `<tr><td>${new Date(x.created * 1000).toLocaleDateString()}</td><td>${x.kind === "wonder" ? "🎲 Wonder" : "🌍 GTS"}</td><td>${x.gave ? `<img class="lb-spr" src="${pkmEsc(pkmShareSprite(x.gave))}" alt="">${pkmEsc(pkmShareLabel(x.gave))}` : "-"}</td><td>${x.got ? `<img class="lb-spr" src="${pkmEsc(pkmShareSprite(x.got))}" alt="">${pkmEsc(pkmShareLabel(x.got))}` : "-"}</td><td>${pkmEsc(x.partner || "")}</td></tr>`).join("")}</table>`
+          : `<div class="pkm-dim">No online trades yet. Finished GTS trades and Wonder Trades show up here.</div>`;
+      }
+      let html = body.apply(this, arguments);
+      if (t === "live" && pkmOnline()) {
+        const q = o.queue;
+        html += `<div class="bag-sec"><span>⚡ Quick match</span><span class="pkm-dim">ranked, against anyone</span></div>
+          ${q ? `<div class="pkm-btns"><span>🔎 Looking for an opponent… (${Math.max(0, (q.waiting || 1) - 1)} other trainer${(q.waiting || 1) - 1 === 1 ? "" : "s"} waiting)</span><button type="button" class="pkm-btn2" data-qm="leave">Stop</button></div>`
+            : `<div class="pkm-btns"><button type="button" class="pkm-btn2 primary" data-qm="join">⚡ Find a ranked match</button></div>`}
+          <div class="bag-sec"><span>🏆 Best of 3</span></div><div class="pkm-btns"><button type="button" class="pkm-btn2" data-lv3="1">Create a best-of-3 code</button><button type="button" class="pkm-btn2" data-lv3="2">Ranked best of 3</button></div>
+          <div class="pkm-dim">In a best of 3, the first to win 2 games wins. Your party is healed before each game.</div>`;
+      }
+      if (t === "guild" && o.guild && o.guild.guild) {
+        const me = o.gme || { role: "member", points: 0, shop: [] };
+        const opts = PKM_GCHAT.map((p, i) => `<option value="${i}">${pkmEsc(p[0].replace("{x}", "…"))}</option>`).join("");
+        html += `<div class="bag-sec"><span>💬 Guild chat</span></div>
+          <div class="ch-list">${(o.gchat || []).map((c) => `<div class="ch-msg${c.me ? " me" : ""}"><b>${PKM_ROLE_ICON[c.role] || ""}${pkmEsc(c.name)}</b> <span class="pkm-dim">${new Date(c.created * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span><div>${pkmEsc(pkmGChatText(c))}</div></div>`).join("") || `<div class="pkm-dim">No messages yet.</div>`}</div>
+          <div class="pkm-btns"><select class="gc-pick" aria-label="Message">${opts}</select><input class="gc-x" maxlength="30" placeholder="Pokémon / item" aria-label="Detail"><button type="button" class="pkm-btn2 primary" data-gchat="send">Send</button></div>
+          <div class="bag-sec"><span>🛒 Guild shop</span><span class="pkm-dim">You have <b>${me.points}</b> guild points (1 per 1000 raid damage, +100 when the boss falls)</span></div>
+          <div class="gs-grid">${(me.shop || []).map((s) => `<button type="button" class="pkm-btn2 ${me.points >= s.cost ? "primary" : ""}" data-gshop="${pkmEsc(s.id)}" ${me.points >= s.cost ? "" : "disabled"}>${pkmEsc(s.label)} · ${s.cost} pts</button>`).join("")}</div>
+          <div class="bag-sec"><span>Ranks</span><span class="pkm-dim">You are ${PKM_ROLE_ICON[me.role] || ""}${pkmEsc(me.role || "member")}</span></div>
+          <table class="lb-table">${o.guild.members.map((m) => `<tr><td>${PKM_ROLE_ICON[m.role] || ""} ${pkmEsc(m.name)}</td><td class="pkm-dim">${pkmEsc(m.role)}</td><td>${me.role === "leader" && m.role === "member" ? `<button type="button" class="pkm-btn2" data-grole="promote" data-target="${m.pid}">⭐ Make officer</button>` : ""}${me.role === "leader" && m.role === "officer" ? `<button type="button" class="pkm-btn2" data-grole="demote" data-target="${m.pid}">Make member</button>` : ""}${((me.role === "leader" && m.role !== "leader") || (me.role === "officer" && m.role === "member")) ? ` <button type="button" class="pkm-btn2 danger" data-grole="kick" data-target="${m.pid}">Remove</button>` : ""}</td></tr>`).join("")}</table>`;
+      }
+      if (t === "gts-extra" && pkmOnline()) {
+        const wl = pkmWishList();
+        const m = o.match || { fill: [], wish: [] };
+        const card = (x) => pkmShareCard(x.mon, `<div class="pkm-dim">From ${pkmEsc(x.owner)} ${pkmBadgeHtml(x.badges)} · ${x.want ? `wants ${pkmEsc(pkmCap(x.want))}` : "wants any Pokémon"}</div>
+          <div class="pkm-btns"><select class="ol-pay" data-for="${x.id}" aria-label="Pokémon to give">${pkmSendOptions(x.want || "") || `<option value="">You don't have one</option>`}</select><button type="button" class="pkm-btn2 primary" data-take="${x.id}" ${pkmSendOptions(x.want || "") ? "" : "disabled"}>Trade</button></div>`);
+        html += `<div class="bag-sec"><span>⭐ Your wish list</span></div>
+          <div class="pkm-btns">${wl.map((s) => `<span class="wl-chip">${pkmEsc(pkmCap(s))}<button type="button" data-wl-del="${pkmEsc(s)}" aria-label="Remove ${pkmEsc(s)}">✕</button></span>`).join("")}<input class="wl-add" maxlength="30" placeholder="Add a Pokémon" aria-label="Add to wish list"><button type="button" class="pkm-btn2" data-wl="add">Add</button></div>
+          ${wl.length ? `<div class="bag-sec"><span>Offers on your wish list</span><span class="pkm-dim">${m.wish.length}</span></div>${m.wish.map(card).join("") || `<div class="pkm-dim">None right now.</div>`}` : ""}
+          <div class="bag-sec"><span>✅ Offers you can fill</span><span class="pkm-dim">they want a Pokémon you have</span></div>${m.fill.map(card).join("") || `<div class="pkm-dim">None right now.</div>`}`;
+      }
+      if (t === "events" && o.community) {
+        const c = o.community;
+        const pct = Math.min(100, Math.round((c.total / c.goal) * 100));
+        const done = c.total >= c.goal;
+        html += `<div class="ev-card"><b>🤝 ${pkmEsc(c.title)}: catch ${c.goal.toLocaleString()} ${pkmEsc(pkmCap(c.species))}</b>
+          <div class="pkm-dim">Every trainer's catches count (up to 30 a day each). When the goal is reached, everyone who helped gets a ${pkmEsc(pkmCap(c.species))} that knows ${pkmEsc(pkmCap(c.move))}! You caught ${c.mine}. ${c.players} trainer${c.players === 1 ? "" : "s"} joined.</div>
+          <div class="bc-bar ev-bar"><span style="width:${pct}%"></span></div><div class="pkm-dim">${c.total.toLocaleString()} / ${c.goal.toLocaleString()}</div>
+          <div class="pkm-btns"><button type="button" class="pkm-btn2 primary" data-comm="claim" ${done && c.mine > 0 && !c.claimed ? "" : "disabled"}>${c.claimed ? "Collected ✓" : "Get the event Pokémon"}</button></div></div>`;
+      }
+      if (t === "friends" && o.friends) {
+        const favs = pkmJSON("pkm_profile_favs", []);
+        const bg = +GM_getValue("pkm_profile_bg", 0) || 0;
+        const opts = (sel) => `<option value="">(none)</option>` + Object.entries(getObj(STORAGE.party) || {}).map(([id, p]) => `<option value="${pkmEsc(id)}" ${sel === id ? "selected" : ""}>${pkmEsc(pkmCap(p.name))}${p.isShiny ? " ✨" : ""}</option>`).join("");
+        html += `<div class="pkm-btns pf-extra"><span>Background</span>${PKM_PROFILE_BGS.map((g, i) => `<button type="button" class="pf-bg${i === bg ? " on" : ""}" data-pfbg="${i}" style="background:${g}" aria-label="Background ${i + 1}" aria-pressed="${i === bg}"></button>`).join("")}</div>
+          <div class="pkm-btns pf-extra"><span>⭐ Favorites</span>${[0, 1, 2].map((i) => `<select class="pf-fav" data-i="${i}" aria-label="Favorite ${i + 1}">${opts(favs[i] || "")}</select>`).join("")}<button type="button" class="pkm-btn2" data-pf="save">Save profile</button></div>`;
+        // friends' profiles + likes
+        setTimeout(() => {
+          const P = pkmOnlinePanel;
+          if (!P) return;
+          for (const f of o.friends.friends || []) {
+            if (!f.profile) continue;
+            const row = P.querySelector(`[data-gift="${f.pid}"], [data-unfriend="${f.pid}"]`)?.closest(".pkm-btns");
+            if (row && !row.querySelector("[data-like]")) row.insertAdjacentHTML("beforeend", `<a class="pkm-btn2" href="${pkmEsc(`${pkmServerUrl()}profile.php?c=${f.profile}`)}" target="_blank" rel="noopener">🪪 Profile</a><button type="button" class="pkm-btn2" data-like="${pkmEsc(f.profile)}">👍 Like</button>`);
+          }
+        }, 0);
+      }
+      return html;
+    };
+  }
+  // The GTS tab is drawn by 14g (not through pkmOnline2Body), so its extras are added after it draws
+  {
+    const dr = pkmDrawOnline;
+    pkmDrawOnline = function () {
+      dr.apply(this, arguments);
+      const P = pkmOnlinePanel;
+      if (!P || pkmOnlineTab !== "gts" || !pkmOnline() || P.querySelector(".gts-extra")) return;
+      const keep = pkmOnlineTab;
+      pkmOnlineTab = "gts-extra";
+      let html = "";
+      try { html = pkmOnline2Body(); } finally { pkmOnlineTab = keep; }
+      P.querySelector(".lk-body")?.insertAdjacentHTML("beforeend", `<div class="gts-extra">${html}</div>`);
+    };
+  }
+  const PKM_PROFILE_BGS = ["linear-gradient(180deg,#111421,#1b2140)", "linear-gradient(180deg,#0f2a1a,#1f4d2e)", "linear-gradient(180deg,#2a1020,#5a1f3a)", "linear-gradient(180deg,#0a2a40,#1a5a7a)",
+    "linear-gradient(180deg,#3a2a0a,#7a5a1a)", "radial-gradient(circle at 30% 20%,#3a2a6a,#111421 70%)", "linear-gradient(180deg,#1a1a1a,#3a3a3a)", "linear-gradient(180deg,#402010,#a04020)"];
+  function pkmProfileFavs() {
+    const party = getObj(STORAGE.party) || {};
+    return pkmJSON("pkm_profile_favs", []).filter((id) => party[id]).slice(0, 3).map((id) => { const m = pkmMonShare(id); if (m) m.h = ""; return m; }).filter(Boolean);
+  }
+
+  // ---------- Online panel: clicks ----------
+  {
+    const ck = pkmOnline2Click;
+    pkmOnline2Click = async function (e) {
+      const P = pkmOnlinePanel;
+      const g = (k) => e.target.closest(`[${k}]`);
+      const qm = g("data-qm")?.dataset.qm;
+      if (qm === "join") return pkmOnlineDo(pkmQueueJoin);
+      if (qm === "leave") { pkmQueueStop(); pkmApi("queue_leave").catch(() => {}); return pkmDrawOnline(); }
+      if (g("data-lv3")) return pkmOnlineDo(() => pkmLiveHost(g("data-lv3").dataset.lv3 === "2", true));
+      if (g("data-gchat")) return pkmOnlineDo(async () => {
+        const msg = +P.querySelector(".gc-pick").value;
+        const x = P.querySelector(".gc-x").value.trim().toLowerCase().replace(/\s+/g, "-");
+        if (PKM_GCHAT[msg][1] && !x) throw new Error("Type the detail (a Pokémon or item).");
+        await pkmApi("guild_chat_post", { msg, sp: PKM_GCHAT[msg][1] ? x : "" });
+        await pkmOnlineRefresh();
+      });
+      if (g("data-gshop")) return pkmOnlineDo(async () => { const r = await pkmApi("guild_shop_buy", { item: g("data-gshop").dataset.gshop }); pkmToast(`🛒 Bought ${pkmApplyServerReward(0, r.items)}!`); await pkmOnlineRefresh(); });
+      if (g("data-grole")) {
+        const el = g("data-grole");
+        if (el.dataset.grole === "kick" && !confirm("Remove this trainer from the guild?")) return;
+        return pkmOnlineDo(async () => { await pkmApi("guild_role", { target: +el.dataset.target, do: el.dataset.grole }); await pkmOnlineRefresh(); });
+      }
+      if (g("data-wl") || g("data-wl-del")) {
+        let wl = pkmWishList();
+        if (g("data-wl-del")) wl = wl.filter((s) => s !== g("data-wl-del").dataset.wlDel);
+        else { const s = pkmSafeSlug(P.querySelector(".wl-add").value.trim().toLowerCase().replace(/\s+/g, "-")); if (!s) return pkmToast("Type a Pokémon name."); if (!wl.includes(s)) wl.push(s); }
+        pkmSave("pkm_wishlist", wl.slice(0, 20));
+        return pkmOnlineDo(pkmOnlineRefresh);
+      }
+      if (g("data-comm")) return pkmOnlineDo(async () => {
+        const r = await pkmApi("community_claim");
+        await pkmDeliver(r.mon, "event");
+        pkmApplyServerReward(r.coins, []);
+        pkmToast(`🤝 Thank you! A ${pkmCap(r.mon.s)} that knows ${pkmCap(r.move)} joined your Bag, plus ${r.coins} coins!`, 6000);
+        await pkmOnlineRefresh();
+      });
+      if (g("data-pfbg")) { GM_setValue("pkm_profile_bg", +g("data-pfbg").dataset.pfbg); return pkmOnlineDo(() => pkmSyncPublicProfile(false).then(() => {}).catch(() => {})); }
+      if (g("data-pf") && g("data-pf").dataset.pf === "save") {
+        pkmSave("pkm_profile_favs", [...P.querySelectorAll(".pf-fav")].map((s) => s.value).filter(Boolean).slice(0, 3));
+        return pkmOnlineDo(async () => { GM_deleteValue("pkm_profile_synced"); await pkmApi("profile_full", { public: GM_getValue("pkm_profile_public", "false") === "true", team: pkmLiveTeam(), look: (() => { const L = pkmLook(); return { sprite: L.sprite, color: L.color, title: L.title }; })(), bg: +GM_getValue("pkm_profile_bg", 0) || 0, favs: pkmProfileFavs(), stats: { dex: (getArr(STORAGE.pokedex) || []).length, tower: pkmTower().best || 0 } }); pkmToast("🪪 Profile saved."); });
+      }
+      if (g("data-like")) return pkmOnlineDo(async () => { const r = await pkmApi("profile_like", { code: g("data-like").dataset.like }); pkmToast(`👍 Liked! That profile has ${r.likes} like${r.likes === 1 ? "" : "s"}.`); });
+      return ck.apply(this, arguments);
+    };
+  }
+
+  // ---------- Community catch goal: count matching catches ----------
+  {
+    const sc = pkmStoreCaught;
+    pkmStoreCaught = function (f, source) {
+      const id = sc.apply(this, arguments);
+      try {
+        const c = pkmJSON("pkm_srv_community", null);
+        if (c && f && pkmOnline() && !["test", "trade", "raid", "egg", "gift", "event", "home", "wonder"].includes(source) && String(f.name).toLowerCase() === c.species && (!c.ends || c.ends * 1000 > Date.now())) {
+          pkmApi("community_catch", { id: c.id, species: c.species }).then((r) => pkmToast(`🤝 Community goal: ${r.total.toLocaleString()} / ${r.goal.toLocaleString()} ${pkmCap(c.species)} caught!`, 3500)).catch(() => {});
+        }
+      } catch {}
+      return id;
+    };
+  }
+  // Learn this week's goal once per page so catches count even before the Events tab is opened
+  setTimeout(() => { if (pkmOnline()) pkmApi("community").then((r) => pkmSave("pkm_srv_community", { id: r.community.id, species: r.community.species, ends: r.community.ends })).catch(() => {}); }, 15000);
+
+  // ---------- Server-checked Battle Frontier progress ----------
+  {
+    const fr = pkmFrontRecord;
+    pkmFrontRecord = function (k, n) {
+      const r = fr.apply(this, arguments);
+      if (pkmOnline() && /^(factory|arcade|pike|hall|castle)$/.test(k)) pkmApi("frontier_progress", { facility: k, n }).catch(() => {});
+      return r;
+    };
+  }
+
+  // ---------- Season pass: bonus track (coins) and season ranking ----------
+  const PKM_BONUS_COST = 5000;
+  function pkmBonusReward(tier) {
+    if (tier === 10) return { items: [["pkm_item_ability-patch", 1, "Ability Patch"]], label: "🩹 Ability Patch" };
+    if (tier === 20) return { items: [[STORAGE.masterBalls, 1, "Master Ball"]], coins: 3000, label: "🟣 Master Ball + 3000 coins" };
+    const c = [{ items: [["pkm_item_rare-candy", 2, "Rare Candy"]], label: "🍬 2 Rare Candy" }, { coins: 1000, label: "💰 1000 coins" }, { items: [[STORAGE.ultraBalls, 5, "Ultra Balls"]], label: "🟡 5 Ultra Balls" },
+      { items: [["pkm_item_nature-mint", 1, "Nature Mint"]], label: "🌿 Nature Mint" }, { items: [["pkm_item_tera-shard", 2, "Tera Shards"]], label: "💎 2 Tera Shards" }];
+    return c[(tier - 1) % c.length];
+  }
+  const pkmPrevSeasonId = () => { const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - 1); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`; };
+  {
+    const os = pkmOpenSeason;
+    pkmOpenSeason = function () {
+      const r = os.apply(this, arguments);
+      const P = pkmSeasonPanel;
+      if (!P) return r;
+      const s = pkmSeason();
+      const tier = Math.min(PKM_SEASON_TIERS, Math.floor(s.sp / PKM_SEASON_STEP));
+      const got = s.bonusTiers || [];
+      P.querySelector(".lk-body").insertAdjacentHTML("beforeend", `<div class="bag-sec"><span>💎 Bonus track</span><span class="pkm-dim">${s.bonus ? "unlocked this season" : `${PKM_BONUS_COST} coins for this season`}</span></div>
+        ${s.bonus ? `<div class="ss-tiers">${Array.from({ length: PKM_SEASON_TIERS }, (_, i) => i + 1).map((t) => { const b = pkmBonusReward(t); const have = got.includes(t); const can = !have && t <= tier; return `<button type="button" class="ss-tier bonus${have ? " got" : can ? " can" : ""}" data-sbonus="${t}" ${can ? "" : "disabled"} title="${pkmEsc(b.label)}"><b>${t}</b><span>${pkmEsc(b.label)}</span>${have ? "<i>✓</i>" : ""}</button>`; }).join("")}</div>`
+          : `<div class="pkm-btns"><button type="button" class="pkm-btn2 primary" data-sbuy="1" ${getInt(STORAGE.coins) >= PKM_BONUS_COST ? "" : "disabled"}>💎 Unlock the bonus track</button><span class="pkm-dim">Every tier also gives a bonus reward (Rare Candy, Ultra Balls, an Ability Patch at 10, a Master Ball at 20).</span></div>`}
+        <div class="bag-sec"><span>🏆 Season ranking</span><span class="pkm-dim">${pkmOnline() ? "top trainers by season points" : "connect in 🌐 Online to rank"}</span></div>
+        <div class="ss-rank">${pkmOnline() ? "Loading…" : ""}</div>
+        ${pkmOnline() ? `<div class="pkm-btns"><button type="button" class="pkm-btn2" data-sclaim="1">Collect last season's ranking prize (${pkmEsc(pkmPrevSeasonId())})</button></div><div class="pkm-dim">Prizes: #1 20000 coins, top 3 10000, top 10 5000 + a Master Ball, top 50 2000, everyone else 500.</div>` : ""}`);
+      P.querySelectorAll("[data-sbonus],[data-sbuy],[data-sclaim]").forEach((el) => (el.onclick = async (e) => {
+        e.stopPropagation();
+        const st = pkmSeason();
+        if (el.dataset.sbuy) {
+          if (getInt(STORAGE.coins) < PKM_BONUS_COST) return pkmToast(`You need ${PKM_BONUS_COST} coins.`);
+          setInt(STORAGE.coins, getInt(STORAGE.coins) - PKM_BONUS_COST);
+          st.bonus = true; pkmSave("pkm_season", st);
+          pkmToast("💎 Bonus track unlocked for this season!");
+          return pkmOpenSeason();
+        }
+        if (el.dataset.sbonus) {
+          const t = +el.dataset.sbonus;
+          st.bonusTiers = st.bonusTiers || [];
+          if (!st.bonus || st.bonusTiers.includes(t) || Math.floor(st.sp / PKM_SEASON_STEP) < t) return;
+          const b = pkmBonusReward(t);
+          if (b.coins) setInt(STORAGE.coins, getInt(STORAGE.coins) + b.coins);
+          if (b.items) pkmGive(b.items);
+          st.bonusTiers.push(t); pkmSave("pkm_season", st);
+          pkmToast(`💎 Bonus tier ${t}: ${b.label}!`);
+          return pkmOpenSeason();
+        }
+        if (el.dataset.sclaim) {
+          try { const x = await pkmApi("season_claim", { season: pkmPrevSeasonId() }); pkmToast(`🏆 Last season you placed #${x.rank}! ${pkmApplyServerReward(x.coins, x.items)}.`, 6000); }
+          catch (err) { pkmToast(err.message, 4000); }
+        }
+      }));
+      if (pkmOnline()) {
+        const board = `season-${s.id}`;
+        pkmApi("score_submit", { board, score: s.sp }).then(() => pkmApi("score_top", { board })).then((x) => {
+          const box = pkmSeasonPanel && pkmSeasonPanel.querySelector(".ss-rank");
+          if (!box) return;
+          box.innerHTML = `<div class="pkm-dim">You: <b>${x.mine == null ? 0 : x.mine}</b> points${x.rank ? ` · rank #${x.rank}` : ""}</div><table class="lb-table">${x.top.slice(0, 10).map((y) => `<tr class="${y.me ? "me" : ""}"><td>${y.rank}</td><td>${pkmEsc(y.name)} ${pkmBadgeHtml(y.badges)}</td><td>${y.score}</td></tr>`).join("")}</table>`;
+        }).catch(() => { const box = pkmSeasonPanel && pkmSeasonPanel.querySelector(".ss-rank"); if (box) box.textContent = "Couldn't load the ranking."; });
+      }
+      return r;
+    };
+  }
+
+  pkmStyle(`
+    .lvw-series{text-align:center;font-size:13px;padding:4px;border-radius:8px;background:rgba(255,203,5,.14);margin-bottom:4px}
+    .gs-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:6px}
+    .wl-chip{display:inline-flex;align-items:center;gap:4px;padding:2px 4px 2px 9px;border-radius:999px;background:rgba(255,203,5,.18);font-size:12.5px}
+    .wl-chip button{all:unset;cursor:pointer;padding:0 4px;opacity:.7}.wl-chip button:hover{opacity:1}
+    .pf-extra{align-items:center}.pf-bg{all:unset;cursor:pointer;width:28px;height:28px;border-radius:8px;box-shadow:inset 0 0 0 2px rgba(255,255,255,.3)}.pf-bg.on{outline:3px solid #ffcb05}
+    .ss-tier.bonus{background:rgba(120,90,255,.14)}.ss-tier.bonus.can{outline-color:#9a7aff;background:rgba(120,90,255,.24)}
+  `, "pkm-v45");
   // ---------- Register the new panels (one at a time + Esc) ----------
   PKM_PANELS.push(
     ["daily", () => pkmDailyPanel, () => pkmCloseDaily()],
@@ -12360,6 +15199,24 @@ button .badge.bg-danger {
   pkmOpenLink = pkmExclusive("link", pkmOpenLink);
   setTimeout(() => { try { pkmCheckAch(); } catch {} }, 4000);
 
+  pkmStyle(`
+    /* Starter picker */
+    .pkm-set.pkm-starter{width:min(520px,96vw);max-height:92vh;overflow:auto}
+    .st-head{background:linear-gradient(90deg,#2fbf71,#1c8a4f)!important}
+    .st-body{padding:10px 14px 14px}
+    .st-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(104px,1fr));gap:8px;max-height:56vh;overflow-y:auto;padding-right:2px}
+    .st-card{all:unset;box-sizing:border-box;cursor:pointer;position:relative;background:#1a1a2a;border:1px solid #2b2b3d;border-radius:12px;padding:8px 6px;text-align:center;color:#e9e7ff;transition:transform .15s ease,box-shadow .15s ease,border-color .15s ease}
+    .st-card:hover,.st-card:focus-visible{transform:translateY(-2px);box-shadow:0 6px 16px rgba(0,0,0,.35);border-color:#ffcb05;outline:none}
+    .st-card img{display:block;margin:0 auto;width:64px;height:64px;image-rendering:pixelated;filter:drop-shadow(0 0 6px rgba(255,255,255,.2))}
+    .st-num{position:absolute;left:8px;top:6px;font-size:.72rem;opacity:.6}
+    .st-name{display:block;margin-top:4px;font-weight:700;font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .st-note{grid-column:1/-1;padding:10px 2px}
+    .st-three{grid-template-columns:repeat(3,1fr);max-height:none}
+    .st-three .st-card{padding:14px 6px}
+    .st-three .st-card img{width:96px;height:96px}
+    .st-three .st-name{font-size:14px}
+    @media(max-width:480px){.st-three{grid-template-columns:1fr}}
+  `);
   pkmStyle(`
     /* HUD: 5 columns now (10 buttons) */
     .pkm-hud .pkm-hud-grid{grid-template-columns:repeat(5,1fr)}
@@ -12529,15 +15386,26 @@ button .badge.bg-danger {
     .pkm-ball::after{content:"";position:absolute;left:50%;top:50%;width:9px;height:9px;margin:-4.5px 0 0 -4.5px;background:#fff;border:2px solid #1b1b1b;border-radius:50%;box-sizing:border-box}
     .pkm-launcher:hover .pkm-ball{transform:rotate(-20deg)}
     .pkm-launcher[aria-expanded="true"] .pkm-ball{transform:rotate(180deg)}
-    .pkm-menu{position:fixed;left:58px;top:max(10px,calc(50% - 210px));z-index:10003;min-width:220px;max-height:calc(100vh - 20px);overflow:auto;background:rgba(17,20,33,.97);
-      color:#e8eaf6;border:1px solid rgba(255,255,255,.12);border-radius:14px;box-shadow:0 14px 40px rgba(0,0,0,.5);padding:6px;display:grid;gap:2px;
-      animation:pkmPop .14s ease-out}
+    .pkm-menu{position:fixed;left:0;top:0;bottom:0;z-index:10003;width:min(330px,92vw);overflow:hidden;background:rgba(17,20,33,.98);
+      color:#e8eaf6;border-right:1px solid rgba(255,255,255,.12);border-radius:0 16px 16px 0;box-shadow:8px 0 40px rgba(0,0,0,.55);padding:8px;display:flex;flex-direction:column;gap:6px;
+      animation:pkmSlide .16s ease-out;box-sizing:border-box}
     .pkm-menu[hidden]{display:none}
-    .pkm-menu-head{padding:6px 10px 8px;font-weight:700;font-size:13px;border-bottom:1px solid rgba(255,255,255,.08);margin-bottom:4px;display:flex;justify-content:space-between;align-items:center}
-    .pkm-menu-item{all:unset;box-sizing:border-box;display:flex;gap:10px;align-items:center;padding:7px 10px;border-radius:9px;cursor:pointer;font-size:13px}
-    .pkm-menu-item:hover{background:rgba(255,255,255,.1)}
-    .pkm-menu-item .ico{width:20px;text-align:center}
+    .pkm-menu-head{padding:4px 4px 8px 10px;font-weight:700;font-size:14px;border-bottom:1px solid rgba(255,255,255,.08);display:flex;gap:8px;justify-content:space-between;align-items:center}
+    .pkm-menu-head .pkm-dim{margin-left:auto}
+    .pkm-menu-x{position:static!important}
+    .pkm-menu-q{all:unset;box-sizing:border-box;width:100%;padding:7px 10px;border-radius:9px;background:rgba(255,255,255,.08);font-size:13px;color:#fff}
+    .pkm-menu-q::placeholder{color:rgba(255,255,255,.5)}
+    .pkm-menu-upd{all:unset;box-sizing:border-box;cursor:pointer;padding:8px 10px;border-radius:10px;background:linear-gradient(90deg,#2fbf71,#1a8a4e);color:#fff;font-weight:700;font-size:12.5px;text-align:center}
+    .pkm-menu-list{overflow:auto;flex:1;display:grid;gap:8px;align-content:start;padding-right:2px;overscroll-behavior:contain}
+    .pkm-menu-grp[hidden]{display:none}
+    .pkm-menu-gt{font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;opacity:.65;padding:2px 6px 4px}
+    .pkm-menu-grid{display:grid;grid-template-columns:1fr 1fr;gap:3px}
+    .pkm-menu-item{all:unset;box-sizing:border-box;display:flex;gap:7px;align-items:center;padding:6px 8px;border-radius:9px;cursor:pointer;font-size:12.5px;line-height:1.2;background:rgba(255,255,255,.04);min-height:34px}
+    .pkm-menu-item[hidden]{display:none}
+    .pkm-menu-item:hover{background:rgba(255,255,255,.12)}
+    .pkm-menu-item .ico{width:18px;text-align:center;flex:none}
     .pkm-menu-sep{height:1px;background:rgba(255,255,255,.08);margin:4px 2px}
+    @keyframes pkmSlide{from{transform:translateX(-24px);opacity:0}to{transform:none;opacity:1}}
     @keyframes pkmPop{from{opacity:0;transform:translateX(-6px) scale(.98)}to{opacity:1;transform:none}}
     /* Auto-hide while typing on the page */
     .pkm-typing .pkm-hud,.pkm-typing .pkm-partner{opacity:0!important;pointer-events:none!important}
