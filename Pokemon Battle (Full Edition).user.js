@@ -4,7 +4,7 @@
 // @connect     pokeapi.co
 // @connect     dstokesncstudio.com
 // @namespace   dstokesncstudio.com
-// @version     4.6.0.0
+// @version     4.6.0.1
 // @updateURL   https://raw.githubusercontent.com/D-Stokes-NC-Gaming-Studio/pokemon-tampermonkey/main/Pokemon%20Battle%20(Full%20Edition).user.js
 // @downloadURL https://raw.githubusercontent.com/D-Stokes-NC-Gaming-Studio/pokemon-tampermonkey/main/Pokemon%20Battle%20(Full%20Edition).user.js
 // @description Full version with XP, evolution, stats, sound, shop, battles, and walking partner — persistent across sites.
@@ -694,9 +694,11 @@ button .badge.bg-danger { animation: pulseBadge 1.2s infinite; position: relativ
 
     async fetchRemoteVersion(url, force = false) {
       // Cached for 1 hour: this used to download the whole script on every HUD redraw. "force" skips the cache (Check now button).
-      try { const c = JSON.parse(GM_getValue("pkm_update_cache", "{}")); if (!force && c.url === url && Date.now() - c.t < 3600e3) return c.v; } catch {}
+      // The cache is tied to the installed version, so installing a new build never trusts an answer saved by an older one.
+      const cur = (typeof GM_info !== "undefined" && GM_info?.script?.version) || "";
+      try { const c = JSON.parse(GM_getValue("pkm_update_cache", "{}")); if (!force && c.url === url && c.cur === cur && Date.now() - c.t < 3600e3) return c.v; } catch {}
       const v = await this._fetchRemoteVersion(url);
-      if (v) GM_setValue("pkm_update_cache", JSON.stringify({ url, t: Date.now(), v }));
+      if (v) GM_setValue("pkm_update_cache", JSON.stringify({ url, t: Date.now(), v, cur }));
       return v;
     }
     async _fetchRemoteVersion(url) {
